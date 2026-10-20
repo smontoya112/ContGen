@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# datos locales: tus videos de fondo, modelos de voz, historias y salidas
+backgrounds/
+models/
+stories/
+out/
+.env
