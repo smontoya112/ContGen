@@ -4,21 +4,23 @@
 # 4) narra y monta los videos. Todo lo que necesita está montado: /data (proyecto) y /models (pesos).
 set -euo pipefail
 
-RUN="/data/runs/${SLURM_JOB_ID:-manual}"
+DATA="${DATA_DIR:-/data}"        # sin contenedor: DATA_DIR y MODELS_DIR apuntan a carpetas reales
+MODELS="${MODELS_DIR:-/models}"
+RUN="$DATA/runs/${SLURM_JOB_ID:-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$RUN/stories" "$RUN/out"
 
-LLM_DIR="${LLM_DIR:-/models/qwen2.5-7b-instruct}"
+LLM_DIR="${LLM_DIR:-$MODELS/qwen2.5-7b-instruct}"
 PORT="${VLLM_PORT:-8000}"
-TOPICS="${TOPICS_FILE:-/data/topics.txt}"
-BACKGROUNDS="${BACKGROUNDS_DIR:-/data/backgrounds}"
+TOPICS="${TOPICS_FILE:-$DATA/topics.txt}"
+BACKGROUNDS="${BACKGROUNDS_DIR:-$DATA/backgrounds}"
 
 export STORYCLIPS_LLM_BASE_URL="http://127.0.0.1:${PORT}/v1"
 export STORYCLIPS_LLM_MODEL="qwen"
-export STORYCLIPS_KOKORO_MODEL="${STORYCLIPS_KOKORO_MODEL:-/models/kokoro/kokoro-v1.0.onnx}"
-export STORYCLIPS_KOKORO_VOICES="${STORYCLIPS_KOKORO_VOICES:-/models/kokoro/voices-v1.0.bin}"
+export STORYCLIPS_KOKORO_MODEL="${STORYCLIPS_KOKORO_MODEL:-$MODELS/kokoro/kokoro-v1.0.onnx}"
+export STORYCLIPS_KOKORO_VOICES="${STORYCLIPS_KOKORO_VOICES:-$MODELS/kokoro/voices-v1.0.bin}"
 
 [ -f "$TOPICS" ] || { echo "ERROR: falta $TOPICS (un tema por línea)" >&2; exit 2; }
-[ -d "$LLM_DIR" ] || { echo "ERROR: faltan los pesos del LLM en $LLM_DIR (corre hpc/prepare_models.sh en el login)" >&2; exit 2; }
+[ -d "$LLM_DIR" ] || { echo "ERROR: faltan los pesos del LLM en $LLM_DIR (corre hpc/prepare_models.sh)" >&2; exit 2; }
 
 echo "[$(date +%T)] arrancando vLLM ($LLM_DIR)"
 python3 -m vllm.entrypoints.openai.api_server \
