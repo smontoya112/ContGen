@@ -1,0 +1,24 @@
+Bootstrap: docker
+# vLLM trae CUDA, PyTorch y el servidor OpenAI-compatible. FIJA la etiqueta a una versión concreta que
+# funcione con los drivers de Hypatia (`latest` cambia con el tiempo): p. ej. vllm/vllm-openai:v0.X.Y
+From: vllm/vllm-openai:latest
+
+%files
+    . /opt/storyclips
+
+%post
+    set -e
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core fontconfig
+    fc-cache -f
+    pip install --no-cache-dir "/opt/storyclips[tts]"
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export HF_HUB_OFFLINE=1
+    export TRANSFORMERS_OFFLINE=1
+
+%help
+    Imagen de storyclips: vLLM (LLM de historias), Kokoro (voz) y FFmpeg.
+    Construir en el nodo de login:  apptainer build --fakeroot storyclips.sif hpc/storyclips.def

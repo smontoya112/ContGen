@@ -24,7 +24,11 @@ def _write_stories(args: argparse.Namespace, topics: list[str]) -> list[Path]:
     out.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
     for topic in topics:
-        story = writer.write(topic)
+        try:
+            story = writer.write(topic)
+        except (StoryError, httpx.HTTPError) as exc:  # una historia mala no tumba el lote
+            print(f"AVISO: sin historia para {topic!r}: {exc}", file=sys.stderr)
+            continue
         path = out / f"{slugify(story.title)}.json"
         path.write_text(
             json.dumps(
@@ -36,6 +40,8 @@ def _write_stories(args: argparse.Namespace, topics: list[str]) -> list[Path]:
         )
         print(f"historia: {story.title}  ->  {path}")
         paths.append(path)
+    if not paths:
+        raise StoryError("no se pudo escribir ninguna historia")
     return paths
 
 
@@ -51,11 +57,20 @@ def _render(args: argparse.Namespace, files: list[Path]) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
+    made = 0
     for file in files:
         data = json.loads(file.read_text(encoding="utf-8"))
         story = Story(data["title"], data["text"])
-        for part in produce(story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng):
+        try:
+            parts = produce(story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng)
+        except (FfmpegError, ValueError) as exc:  # una historia mala no tumba el lote
+            print(f"AVISO: no se montó {file.name}: {exc}", file=sys.stderr)
+            continue
+        for part in parts:
+            made += 1
             print(f"video: {part.video}  ({part.duration_s:.0f} s, fondo {part.background})")
+    if not made:
+        raise FfmpegError("no se generó ningún video")
 
 
 def _topics(args: argparse.Namespace) -> list[str]:

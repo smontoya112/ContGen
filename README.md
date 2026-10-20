@@ -52,3 +52,33 @@ parte. Voz en inglés: `--voice af_heart --tts-lang en-us`; historias en inglés
 - Publicidad de voz sintética: marca los videos como contenido alterado/sintético donde la plataforma lo pida.
 - Pendiente: subir a YouTube/TikTok (el publicador de kidsgen se puede adaptar; TikTok exige su propia API y
   auditoría), música de fondo opcional, varias voces.
+
+## En Hypatia (SLURM + GPU) — la forma de uso real
+
+Todo corre en un job con 1 GPU: Qwen (vLLM) escribe las historias, Kokoro las narra y FFmpeg monta los
+videos. Los nodos de cómputo normalmente NO tienen internet, así que los pesos se bajan antes desde el login.
+Los valores de partición, GPU y rutas son **provisionales: confírmalos con la administración de Hypatia**.
+
+```bash
+# En el nodo de login (con internet), una sola vez:
+git clone <tu repo> storyclips && cd storyclips          # o súbelo con scp/rsync
+export STORYCLIPS_MODELS=/project/models
+bash hpc/prepare_models.sh                                # Qwen2.5-7B-Instruct + Kokoro
+apptainer build --fakeroot /project/storyclips/storyclips.sif hpc/storyclips.def
+
+# Tus datos (desde tu PC): videos de fondo y temas
+#   /project/storyclips/backgrounds/*.mp4     (tus videos de Minecraft, varios minutos cada uno)
+#   /project/storyclips/topics.txt            (un tema por línea)
+
+# Lanzar:
+sbatch --partition=<gpu> --gres=gpu:1 hpc/storyclips.sbatch
+```
+
+Resultado en `/project/storyclips/runs/<jobid>/out/` (`*_parte1.mp4`, `*_parte2.mp4`, `*.json`) y los logs en
+`vllm.log` y `storyclips-<jobid>.out`. Variables útiles al lanzar (`--export=ALL,CLAVE=valor`): `STORY_LANGUAGE`,
+`TTS_VOICE`, `TTS_LANG`, `LLM_DIR`, `TP_SIZE` (más de 1 GPU para un modelo grande).
+
+Qué falta confirmar en Hypatia: que haya Apptainer y `--fakeroot` para construir (si no, construye la imagen en
+otra máquina y súbela), versión de CUDA/driver compatible con la imagen de vLLM (fija su etiqueta en
+`hpc/storyclips.def`), y la partición y GPU a usar. Una historia a la vez; si necesitas cientos, el siguiente
+paso es paralelizar las peticiones a vLLM.
