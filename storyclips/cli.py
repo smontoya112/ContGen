@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 
 from storyclips.background import NoBackground, scan_sources
-from storyclips.ffmpeg import FfmpegError, probe_duration, run_ffmpeg
+from storyclips.ffmpeg import FfmpegError, analyze_activity, probe_duration, run_ffmpeg
 from storyclips.llm import ChatClient, LlmConfig, StoryError, StoryWriter
 from storyclips.models import Story
 from storyclips.pipeline import produce, slugify
@@ -53,7 +53,10 @@ def _make_tts(args: argparse.Namespace) -> TTS:
 
 def _render(args: argparse.Namespace, files: list[Path]) -> None:
     tts = _make_tts(args)
-    sources = scan_sources(Path(args.backgrounds), probe_duration)
+    sources = scan_sources(Path(args.backgrounds), probe_duration, analyze=analyze_activity)
+    for src in sources:
+        moving = sum(b - a for a, b in src.intervals())
+        print(f"fondo {src.path.name}: {moving:.0f} s con movimiento de {src.duration_s:.0f} s")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
@@ -62,7 +65,10 @@ def _render(args: argparse.Namespace, files: list[Path]) -> None:
         data = json.loads(file.read_text(encoding="utf-8"))
         story = Story(data["title"], data["text"])
         try:
-            parts = produce(story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng)
+            parts = produce(
+                story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng,
+                parts=args.parts, allow_loop=args.allow_loop,
+            )  # fmt: skip
         except (FfmpegError, ValueError) as exc:  # una historia mala no tumba el lote
             print(f"AVISO: no se montó {file.name}: {exc}", file=sys.stderr)
             continue
@@ -107,6 +113,18 @@ def _common(p: argparse.ArgumentParser, *, write: bool, render: bool) -> None:
         p.add_argument("--backgrounds", default="backgrounds", help="tus videos de fondo")
         p.add_argument("--out", default="out")
         p.add_argument("--seed", type=int, default=0)
+        p.add_argument(
+            "--parts",
+            type=int,
+            choices=(1, 2),
+            default=2,
+            help="1 = un solo video; 2 = dos partes con corte",
+        )
+        p.add_argument(
+            "--allow-loop",
+            action="store_true",
+            help="si no hay tramos con movimiento largos, repite uno corto en bucle (solo pruebas)",
+        )
         p.add_argument("--fake-tts", action="store_true", help="tonos en vez de voz (para probar)")
         p.add_argument("--voice", default="ef_dora", help="voz de Kokoro")
         p.add_argument("--tts-lang", default="es", help="idioma de Kokoro (es, en-us…)")

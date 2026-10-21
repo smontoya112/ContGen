@@ -63,6 +63,7 @@ wait "$VLLM_PID" 2>/dev/null || true
 
 echo "[$(date +%T)] narrando y montando"
 storyclips render "$RUN"/stories/*.json --backgrounds "$BACKGROUNDS" --out "$RUN/out" \
-    --voice "${TTS_VOICE:-ef_dora}" --tts-lang "${TTS_LANG:-es}"
+    --voice "${TTS_VOICE:-ef_dora}" --tts-lang "${TTS_LANG:-es}" \
+    --parts "${PARTS:-2}" ${ALLOW_LOOP:+--allow-loop}
 
 echo "[$(date +%T)] listo: $RUN/out"

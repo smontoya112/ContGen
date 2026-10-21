@@ -83,7 +83,7 @@ def test_pick_segment_stays_inside_a_long_enough_source() -> None:
 
 
 def test_pick_segment_explains_when_nothing_is_long_enough() -> None:
-    with pytest.raises(NoBackground, match="el más largo dura 30 s"):
+    with pytest.raises(NoBackground, match="dura 30 s"):
         pick_segment([Source(Path("a.mp4"), 30)], 90, random.Random(0))
 
 

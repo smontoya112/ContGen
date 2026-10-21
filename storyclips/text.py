@@ -60,6 +60,11 @@ def split_parts(text: str, *, parts: int = 2) -> list[list[str]]:
     chunks = [c for c in (p.strip() for p in text.split(CUT_MARKER)) if c]
     groups = [split_sentences(c) for c in chunks]
     groups = [g for g in groups if g]
+    if parts == 1:  # un solo video: la historia entera, sin corte
+        sentences = [s for g in groups for s in g]
+        if not sentences:
+            raise ValueError("la historia está vacía")
+        return [sentences]
     if len(groups) >= 2:
         return groups[: max(2, parts)] if parts >= 2 else groups
     sentences = groups[0] if groups else []

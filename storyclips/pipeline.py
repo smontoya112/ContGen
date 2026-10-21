@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from storyclips.background import Source, pick_segment
-from storyclips.ffmpeg import Runner, render_command
+from storyclips.ffmpeg import Runner, clip_command, render_command
 from storyclips.models import Audio, Narration, Story
 from storyclips.narrate import narrate, write_wav
 from storyclips.subtitles import build_ass
@@ -46,6 +46,8 @@ def _with_tail(narration: Narration, seconds: float) -> Narration:
 
 
 def part_title(title: str, index: int, total: int) -> str:
+    if total == 1:
+        return title[:100]
     suffix = f" (Parte {index}/{total})"
     return title[: 100 - len(suffix)] + suffix
 
@@ -60,6 +62,7 @@ def produce(
     rng: random.Random,
     parts: int = 2,
     pause_s: float = 0.25,
+    allow_loop: bool = False,
 ) -> list[PartResult]:
     """Genera los videos de la historia. Cada parte menos la última termina en el corte con una
     tarjeta «Parte N en el siguiente video»; la siguiente parte empieza con su «PARTE N»."""
@@ -76,26 +79,38 @@ def produce(
         if not last:
             narration = _with_tail(narration, TAIL_S)
         duration = narration.duration_s
-        cards = [(0.0, min(CARD_S, duration), f"PARTE {index}")]
-        if not last:
-            cards.append(
-                (max(0.0, duration - CARD_S), duration, f"Parte {index + 1} en el siguiente video")
-            )
+        cards: list[tuple[float, float, str]] = []
+        if total > 1:  # un solo video no lleva tarjetas de parte
+            cards.append((0.0, min(CARD_S, duration), f"PARTE {index}"))
+            if not last:
+                cards.append(
+                    (
+                        max(0.0, duration - CARD_S),
+                        duration,
+                        f"Parte {index + 1} en el siguiente video",
+                    )
+                )
 
         voice, ass = work / f"parte{index}.wav", work / f"parte{index}.ass"
         write_wav(narration.audio, voice)
         ass.write_text(build_ass(narration.words, cards=cards), encoding="utf-8")
 
-        segment = pick_segment(sources, duration, rng)
-        video = out_dir / f"{slug}_parte{index}.mp4"
+        segment = pick_segment(sources, duration, rng, allow_loop=allow_loop)
+        video = out_dir / (f"{slug}.mp4" if total == 1 else f"{slug}_parte{index}.mp4")
+        source, start = segment.path.resolve(), segment.start
+        if segment.loop:  # tramo corto: se corta una vez y se repite en bucle
+            clip = work / f"fondo{index}.mp4"
+            run(clip_command(source, segment.start, segment.clip_s or 0.0, clip.resolve()), work)
+            source, start = clip.resolve(), 0.0
         run(
             render_command(
-                segment.path.resolve(),
-                segment.start,
+                source,
+                start,
                 duration,
                 voice.resolve(),
                 ass.name,
                 video.resolve(),
+                loop=segment.loop,
             ),
             work,
         )
