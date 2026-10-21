@@ -172,3 +172,26 @@ def test_parse_story_rejects_links_and_wrong_lengths(story: str, problem: str) -
 def test_json_in_a_code_fence_is_accepted() -> None:
     raw = "```json\n" + json.dumps({"title": "T", "story": _story_text()}) + "\n```"
     assert parse_story(raw, min_words=100, max_words=500).title == "T"
+
+
+def test_explicit_violence_is_refused_and_retried_with_the_reason() -> None:
+    prompts: list[str] = []
+    violent = _paragraph("v") + " Entonces enterré al vecino."
+    replies = [_outline(), violent, *[_paragraph(str(i)) for i in range(1, 9)]]
+    story = _writer(replies, prompts).write("tema")
+    assert "violencia explícita" in prompts[2] and "enterr" in prompts[2]
+    assert "enterré" not in story.text
+
+
+@pytest.mark.parametrize("word", ["asesinato", "sangre", "mató", "cuchillo", "cadáver"])
+def test_the_violence_filter_catches_common_words(word: str) -> None:
+    bad = _paragraph("v") + f" Había {word} ahí."
+    with pytest.raises(StoryError, match="violencia"):
+        _writer([_outline(), bad, bad, bad]).write("tema")
+
+
+def test_the_prompts_ask_for_simple_direct_confession_style() -> None:
+    prompts: list[str] = []
+    _writer(_story_replies(), prompts).write("tema")
+    assert "tipo Reddit" in prompts[0] and "Sin violencia" in prompts[0]
+    assert "simple y directo" in prompts[1] and "CORTAS" in prompts[1]

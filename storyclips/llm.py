@@ -20,24 +20,14 @@ from storyclips.text import CUT_MARKER, has_url, split_sentences
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 _SYSTEM = (
-    "Eres guionista de historias cortas para video vertical narradas en primera persona, con "
-    "ganchos fuertes. Escribes ficción ORIGINAL: nunca copies ni adaptes publicaciones reales de "
-    "Reddit u otras webs, ni uses personas reales, marcas o datos personales. Sin violencia gráfica, "
-    "sin contenido sexual, sin odio."
+    "Eres un narrador de confesiones tipo Reddit para video vertical. Escribes como una persona real "
+    "que le cuenta a un amigo algo que le pasó: lenguaje SIMPLE y DIRECTO, frases cortas, palabras de "
+    "todos los días, cero metáforas rebuscadas ni descripciones poéticas. Primera persona, ritmo rápido, "
+    "detalles concretos (nombres, horas, lugares, cosas que se dijeron). Ficción ORIGINAL: nunca copies "
+    "ni adaptes publicaciones reales, ni uses personas reales, marcas o datos personales. Nada de "
+    "violencia explícita, muertes, armas, sangre, contenido sexual ni odio: el misterio y la tensión "
+    "vienen de secretos, mentiras, descubrimientos y giros cotidianos."
 )
-
-_USER = """Escribe una historia original sobre: {topic}.
-Idioma: {language}.
-Longitud total: entre {min_words} y {max_words} palabras (unas 25 a 35 frases). Una historia con
-menos de {min_words} palabras es INCORRECTA: desarrolla la trama con detalles, diálogos y escenas.
-Reglas:
-- Primera persona, frases cortas, ritmo rápido, un gancho en la primera frase.
-- Coloca la marca {marker} en una línea sola en el momento MÁS tenso de la historia (un giro o un
-  descubrimiento), a más o menos el 55-65 % del texto. Quien vea la parte 1 debe quedarse con ganas
-  de ver la parte 2. La historia continúa y termina después de la marca.
-- Termina con un cierre que dé gusto (o un último giro).
-Devuelve JSON: {{"title": "título de máximo 80 caracteres", "story": "texto con la marca"}}
-{feedback}"""
 
 
 class StoryError(Exception):
@@ -67,7 +57,7 @@ class ChatClient:
         self._http = http or httpx.Client(timeout=config.timeout_s, headers=headers)
         self._config = config
 
-    def complete(self, system: str, user: str, *, temperature: float = 0.9) -> str:
+    def complete(self, system: str, user: str, *, temperature: float = 0.7) -> str:
         response = self._http.post(
             f"{self._config.base_url.rstrip('/')}/chat/completions",
             json={
@@ -109,13 +99,14 @@ def parse_story(raw: str, *, min_words: int, max_words: int) -> Story:
     return Story(title=title, text=text)
 
 
-_OUTLINE = """Diseña el esquema de una historia original sobre: {topic}.
+_OUTLINE = """Diseña el esquema de una confesión original tipo Reddit sobre: {topic}.
 Idioma: {language}.
 Escribe exactamente {beats} momentos numerados (1. a {beats}.), uno por línea, cada uno de una sola frase
-que diga QUÉ pasa. Reglas: narrador en primera persona; el momento 1 es un gancho fuerte; el momento
-{cut} es el de MÁXIMA tensión, justo antes de una revelación, y no se resuelve; del {next_beat} en
-adelante se revela y se cierra con un último giro.
-Primera línea exacta, antes de la lista: TITULO: <título de máximo 80 caracteres>
+que diga QUÉ pasa, con hechos concretos de la vida diaria (un vecino, un compañero, un familiar, un
+mensaje, un objeto, una mentira). Reglas: narrador en primera persona; el momento 1 es un gancho fuerte;
+el momento {cut} es el de MÁXIMA tensión, justo antes de una revelación, y no se resuelve; del
+{next_beat} en adelante se revela y se cierra con un último giro. Sin violencia ni muertes.
+Primera línea exacta, antes de la lista: TITULO: <título corto y llamativo, máximo 80 caracteres>
 Sin comentarios.{feedback}"""
 
 _PARAGRAPH = """Historia: {title}. Idioma: {language}.
@@ -126,8 +117,9 @@ Texto escrito hasta ahora:
 {written}
 
 Escribe SOLO el párrafo del momento {n}: «{beat}».
-Entre {min_words} y {max_words} palabras (4 a 6 frases cortas), primera persona, con detalles y
-sensaciones. Continúa el texto anterior sin repetirlo. {ending}{feedback}"""
+Entre {min_words} y {max_words} palabras, de 3 a 5 frases CORTAS. Lenguaje simple y directo, como si se
+lo contaras a un amigo: nada de metáforas ni descripciones poéticas; di qué pasó, qué dijiste y qué
+sentiste. Primera persona, continúa el texto anterior sin repetirlo. {ending}{feedback}"""
 
 _TITLE = re.compile(r"^\s*t[ií]tulo\s*:\s*(.+)$", re.IGNORECASE)
 _BEAT = re.compile(r"^\s*\d+\s*[.)\-:]\s*(.+)$")
@@ -138,6 +130,13 @@ def _clean(raw: str) -> str:
     return text.replace(CUT_MARKER, " ").strip()
 
 
+_VIOLENT = re.compile(
+    r"\b(mat[ae]r?|mat[óo]|asesin\w*|cad[áa]ver\w*|sangre|sangrient\w*|enterr\w*|apu[ñn]al\w*|"
+    r"degoll\w*|cuchill\w*|pistola|disparo\w*|tortur\w*|violaci[óo]n|suicid\w*)\b",
+    re.IGNORECASE,
+)
+
+
 def _check_paragraph(text: str, *, min_words: int, max_words: int) -> None:
     words = len(text.split())
     problems: list[str] = []
@@ -145,6 +144,8 @@ def _check_paragraph(text: str, *, min_words: int, max_words: int) -> None:
         problems.append(f"{words} palabras (se pedían {min_words}-{max_words})")
     if has_url(text):
         problems.append("contiene enlaces")
+    if hit := _VIOLENT.search(text):
+        problems.append(f"menciona violencia explícita ({hit.group(0)!r}): reescríbelo sin ella")
     if problems:
         raise StoryError("; ".join(problems))
 
@@ -176,7 +177,7 @@ class StoryWriter:
         *,
         language: str = "español neutro",
         beats: int = 8,
-        paragraph_words: tuple[int, int] = (28, 110),
+        paragraph_words: tuple[int, int] = (30, 90),
         attempts: int = 3,
     ) -> None:
         if beats < 4 or beats % 2:
