@@ -192,7 +192,8 @@ class StoryWriter:
         *,
         language: str = "español neutro",
         beats: int = 10,
-        paragraph_words: tuple[int, int] = (35, 100),
+        paragraph_words: tuple[int, int] = (30, 110),
+        ask_min_words: int = 55,  # lo que se le PIDE al modelo: se queda ~40 % corto
         attempts: int = 4,
     ) -> None:
         if beats < 4 or beats % 2:
@@ -201,6 +202,7 @@ class StoryWriter:
         self._language = language
         self._beats = beats
         self._min, self._max = paragraph_words
+        self._ask_min = ask_min_words
         self._attempts = attempts
 
     def _retry(self, prompt_for, validate):
@@ -249,7 +251,7 @@ class StoryWriter:
                     written=written,
                     n=n,
                     beat=beat,
-                    min_words=self._min,
+                    min_words=self._ask_min,
                     max_words=self._max,
                     ending=ending,
                     feedback=fb,

@@ -217,7 +217,9 @@ def test_telling_the_emotion_is_refused(phrase: str) -> None:
 
 def test_defaults_aim_for_about_a_minute_per_part() -> None:
     writer = StoryWriter(_client(lambda r: _chat("")))
-    assert writer._beats == 10 and writer._min >= 35  # 5 párrafos de 35+ palabras por parte
+    assert (
+        writer._beats == 10 and writer._min >= 30 and writer._ask_min >= 50
+    )  # 5 párrafos por parte
     prompts: list[str] = []
     _writer([_outline(10), *[_paragraph(str(i)) for i in range(1, 11)]], prompts, beats=10).write(
         "t"
