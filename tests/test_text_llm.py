@@ -218,10 +218,37 @@ def test_telling_the_emotion_is_refused(phrase: str) -> None:
 def test_defaults_aim_for_about_a_minute_per_part() -> None:
     writer = StoryWriter(_client(lambda r: _chat("")))
     assert (
-        writer._beats == 10 and writer._min >= 30 and writer._ask_min >= 50
+        writer._beats == 10 and writer._min >= 30 and writer._ask_min >= 45
     )  # 5 párrafos por parte
     prompts: list[str] = []
     _writer([_outline(10), *[_paragraph(str(i)) for i in range(1, 11)]], prompts, beats=10).write(
         "t"
     )
     assert "DATO NUEVO" in prompts[0] and "diálogo" in prompts[1] and "NO escribas" in prompts[1]
+
+
+def test_a_repeated_sentence_is_detected() -> None:
+    from storyclips.llm import repeated_sentence
+
+    before = "Me temblaron las manos y tuve que cerrar la puerta para recuperar el aliento. Salí."
+    assert repeated_sentence(
+        "Dije algo. Me temblaron las manos y tuve que cerrar la puerta para recuperar el aliento.",
+        before,
+    )
+    # también si solo cambia el principio pero acaba igual
+    assert repeated_sentence(
+        "Entonces tuve que cerrar la puerta para recuperar el aliento.", before
+    )
+    assert repeated_sentence("Abrí el cajón y encontré una llave distinta.", before) is None
+    assert (
+        repeated_sentence("Frase corta aquí.", "Frase corta aquí.") is None
+    )  # menos de 5 palabras
+
+
+def test_a_paragraph_repeating_the_previous_text_is_retried() -> None:
+    prompts: list[str] = []
+    first = _paragraph("a")
+    replies = [_outline(), first, first, *[_paragraph(str(i)) for i in range(2, 9)]]
+    story = _writer(replies, prompts).write("tema")
+    assert "repite una frase ya usada" in prompts[3]
+    assert story.text.count("palabraa0") == 1

@@ -122,8 +122,8 @@ Entre {min_words} y {max_words} palabras, de 4 a 6 frases CORTAS. Lenguaje simpl
 lo contaras a un amigo: nada de metáforas ni descripciones poéticas.
 OBLIGATORIO: (1) incluye al menos un diálogo, lo que alguien dice entre comillas «así»; (2) el párrafo
 trae un dato nuevo o un giro concreto; (3) NO escribas «sentí miedo», «me dio miedo», «sentí
-frustración» ni nombres de emociones: muestra la reacción con una acción o un detalle (me temblaron
-las manos, dejé de respirar, cerré la puerta). Primera persona; continúa el texto anterior sin
+frustración» ni nombres de emociones: muestra la reacción con una acción o un detalle NUEVO y distinto
+en cada párrafo; NUNCA repitas una frase o una reacción ya usada en el texto anterior. Primera persona; continúa el texto anterior sin
 repetirlo. {ending}{feedback}"""
 
 _TITLE = re.compile(r"^\s*t[ií]tulo\s*:\s*(.+)$", re.IGNORECASE)
@@ -148,13 +148,30 @@ _VIOLENT = re.compile(
 )
 
 
-def _check_paragraph(text: str, *, min_words: int, max_words: int) -> None:
+def _norm_sentences(text: str) -> list[list[str]]:
+    return [re.findall(r"\w+", sentence.lower()) for sentence in split_sentences(text)]
+
+
+def repeated_sentence(text: str, previous: str) -> str | None:
+    """Una frase (5+ palabras) que ya estaba en el texto anterior, o que acaba igual que una de ellas."""
+    old = [w for w in _norm_sentences(previous) if len(w) >= 5]
+    seen = {" ".join(w) for w in old}
+    tails = {" ".join(w[-5:]) for w in old}
+    for words in _norm_sentences(text):
+        if len(words) >= 5 and (" ".join(words) in seen or " ".join(words[-5:]) in tails):
+            return " ".join(words)
+    return None
+
+
+def _check_paragraph(text: str, *, min_words: int, max_words: int, previous: str = "") -> None:
     words = len(text.split())
     problems: list[str] = []
     if not min_words <= words <= max_words:
         problems.append(f"{words} palabras (se pedían {min_words}-{max_words})")
     if has_url(text):
         problems.append("contiene enlaces")
+    if repeated := repeated_sentence(text, previous):
+        problems.append(f"repite una frase ya usada ({repeated[:60]!r}): escribe algo distinto")
     if not _DIALOGUE.search(text):
         problems.append("no tiene ningún diálogo entre comillas «así»")
     if hit := _TELLING.search(text):
@@ -193,7 +210,7 @@ class StoryWriter:
         language: str = "español neutro",
         beats: int = 10,
         paragraph_words: tuple[int, int] = (30, 110),
-        ask_min_words: int = 55,  # lo que se le PIDE al modelo: se queda ~40 % corto
+        ask_min_words: int = 45,  # lo que se le PIDE al modelo: se queda ~40 % corto
         attempts: int = 4,
     ) -> None:
         if beats < 4 or beats % 2:
@@ -256,13 +273,13 @@ class StoryWriter:
                     ending=ending,
                     feedback=fb,
                 ),  # fmt: skip
-                lambda raw: self._valid_paragraph(raw),
+                lambda raw, done=paragraphs: self._valid_paragraph(raw, "\n".join(done)),
             )
             paragraphs.append(paragraph)
         first, second = "\n".join(paragraphs[:cut]), "\n".join(paragraphs[cut:])
         return Story(title=title, text=f"{first}\n{CUT_MARKER}\n{second}")
 
-    def _valid_paragraph(self, raw: str) -> str:
+    def _valid_paragraph(self, raw: str, previous: str = "") -> str:
         text = _clean(raw)
-        _check_paragraph(text, min_words=self._min, max_words=self._max)
+        _check_paragraph(text, min_words=self._min, max_words=self._max, previous=previous)
         return text
