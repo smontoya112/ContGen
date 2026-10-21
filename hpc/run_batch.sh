@@ -23,10 +23,17 @@ export STORYCLIPS_KOKORO_VOICES="${STORYCLIPS_KOKORO_VOICES:-$MODELS/kokoro/voic
 [ -d "$LLM_DIR" ] || { echo "ERROR: faltan los pesos del LLM en $LLM_DIR (corre hpc/prepare_models.sh)" >&2; exit 2; }
 
 echo "[$(date +%T)] arrancando vLLM ($LLM_DIR)"
-python3 -m vllm.entrypoints.openai.api_server \
-    --model "$LLM_DIR" --served-model-name qwen --port "$PORT" \
-    --max-model-len 4096 --gpu-memory-utilization "${GPU_MEM_UTIL:-0.85}" \
-    --tensor-parallel-size "${TP_SIZE:-1}" > "$RUN/vllm.log" 2>&1 &
+# LLM_BACKEND=hf (por defecto): transformers + PyTorch cu118, para GPU/driver antiguos como los de
+# Hypatia (Quadro RTX 6000, CUDA 11.8). LLM_BACKEND=vllm: vLLM, solo con driver/CUDA 12 o más.
+if [ "${LLM_BACKEND:-hf}" = "vllm" ]; then
+    python3 -m vllm.entrypoints.openai.api_server \
+        --model "$LLM_DIR" --served-model-name qwen --port "$PORT" \
+        --max-model-len 4096 --gpu-memory-utilization "${GPU_MEM_UTIL:-0.85}" \
+        --tensor-parallel-size "${TP_SIZE:-1}" > "$RUN/vllm.log" 2>&1 &
+else
+    "${LLM_PYTHON:-python3}" "$(dirname "$0")/hf_server.py" \
+        --model "$LLM_DIR" --served-model-name qwen --port "$PORT" > "$RUN/vllm.log" 2>&1 &
+fi
 VLLM_PID=$!
 trap 'kill "$VLLM_PID" 2>/dev/null || true' EXIT
 
