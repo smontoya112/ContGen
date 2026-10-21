@@ -90,7 +90,12 @@ def produce(
         video = out_dir / f"{slug}_parte{index}.mp4"
         run(
             render_command(
-                segment.path, segment.start, duration, voice.resolve(), ass.name, video.resolve()
+                segment.path.resolve(),
+                segment.start,
+                duration,
+                voice.resolve(),
+                ass.name,
+                video.resolve(),
             ),
             work,
         )

@@ -197,3 +197,26 @@ def test_real_ffmpeg_end_to_end(tmp_path: Path) -> None:
     )  # fmt: skip
     for r in results:
         assert r.video.exists() and probe_duration(r.video) == pytest.approx(r.duration_s, abs=1.0)
+
+
+def test_ffmpeg_receives_absolute_paths_because_it_runs_in_the_work_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un bug real en Hypatia: con un fondo relativo FFmpeg (cwd = carpeta de trabajo) no lo encontraba."""
+    (tmp_path / "bg").mkdir()
+    (tmp_path / "bg" / "mc.mp4").write_bytes(b"x")
+    monkeypatch.chdir(tmp_path)
+    commands: list[list[str]] = []
+
+    produce(
+        _story(),
+        tts=FakeTTS(),
+        sources=[Source(Path("bg/mc.mp4"), 3600)],
+        out_dir=Path("salida"),
+        run=lambda cmd, cwd: commands.append(cmd),
+        rng=random.Random(0),
+    )
+
+    for cmd in commands:
+        paths = [cmd[cmd.index("-i") + 1], cmd[cmd.index("-i", cmd.index("-i") + 1) + 1], cmd[-1]]
+        assert all(Path(p).is_absolute() for p in paths), paths
