@@ -9,3 +9,4 @@ models/
 stories/
 out/
 .env
+out_hypatia/
