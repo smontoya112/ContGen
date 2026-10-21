@@ -70,7 +70,7 @@ def _client(handler) -> ChatClient:
 
 
 def _paragraph(tag: str, n: int = 40) -> str:
-    return " ".join(f"palabra{tag}{i}" for i in range(n)) + "."
+    return " ".join(f"palabra{tag}{i}" for i in range(n)) + " dijo «hola»."
 
 
 def _outline(beats: int = 8, title: str | None = "El vecino del sótano") -> str:
@@ -90,6 +90,7 @@ def _writer(replies: list[str], prompts: list[str] | None = None, **kw) -> Story
             prompts.append(json.loads(request.content)["messages"][1]["content"])
         return _chat(next(answers))
 
+    kw.setdefault("beats", 8)
     return StoryWriter(_client(handler), **kw)
 
 
@@ -130,7 +131,7 @@ def test_a_short_paragraph_is_retried_with_the_reason() -> None:
     prompts: list[str] = []
     replies = [_outline(), _paragraph("x", 5), *[_paragraph(str(i)) for i in range(1, 9)]]
     _writer(replies, prompts).write("tema")
-    assert "falló" in prompts[2] and "5 palabras" in prompts[2]
+    assert "falló" in prompts[2] and "7 palabras" in prompts[2]
 
 
 def test_a_missing_title_falls_back_to_the_topic() -> None:
@@ -195,3 +196,30 @@ def test_the_prompts_ask_for_simple_direct_confession_style() -> None:
     _writer(_story_replies(), prompts).write("tema")
     assert "tipo Reddit" in prompts[0] and "Sin violencia" in prompts[0]
     assert "simple y directo" in prompts[1] and "CORTAS" in prompts[1]
+
+
+def test_a_paragraph_without_dialogue_is_refused() -> None:
+    flat = " ".join(f"palabra{i}" for i in range(40)) + "."
+    with pytest.raises(StoryError, match="diálogo"):
+        _writer([_outline(), flat, flat, flat, flat]).write("tema")
+
+
+@pytest.mark.parametrize(
+    "phrase", ["Sentí miedo", "me dio miedo", "sentí frustración", "Sentí mucho terror"]
+)
+def test_telling_the_emotion_is_refused(phrase: str) -> None:
+    prompts: list[str] = []
+    bad = _paragraph("m") + f" {phrase}."
+    replies = [_outline(), bad, *[_paragraph(str(i)) for i in range(1, 9)]]
+    _writer(replies, prompts).write("tema")
+    assert "dice la emoción" in prompts[2]
+
+
+def test_defaults_aim_for_about_a_minute_per_part() -> None:
+    writer = StoryWriter(_client(lambda r: _chat("")))
+    assert writer._beats == 10 and writer._min >= 35  # 5 párrafos de 35+ palabras por parte
+    prompts: list[str] = []
+    _writer([_outline(10), *[_paragraph(str(i)) for i in range(1, 11)]], prompts, beats=10).write(
+        "t"
+    )
+    assert "DATO NUEVO" in prompts[0] and "diálogo" in prompts[1] and "NO escribas" in prompts[1]

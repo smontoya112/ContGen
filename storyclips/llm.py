@@ -103,7 +103,8 @@ _OUTLINE = """Diseña el esquema de una confesión original tipo Reddit sobre: {
 Idioma: {language}.
 Escribe exactamente {beats} momentos numerados (1. a {beats}.), uno por línea, cada uno de una sola frase
 que diga QUÉ pasa, con hechos concretos de la vida diaria (un vecino, un compañero, un familiar, un
-mensaje, un objeto, una mentira). Reglas: narrador en primera persona; el momento 1 es un gancho fuerte;
+mensaje, un objeto, una mentira). CADA momento trae un DATO NUEVO o un giro concreto (algo que se
+descubre, alguien que dice algo inesperado, un objeto que aparece o cambia) y, si cabe, alguien habla. Reglas: narrador en primera persona; el momento 1 es un gancho fuerte;
 el momento {cut} es el de MÁXIMA tensión, justo antes de una revelación, y no se resuelve; del
 {next_beat} en adelante se revela y se cierra con un último giro. Sin violencia ni muertes.
 Primera línea exacta, antes de la lista: TITULO: <título corto y llamativo, máximo 80 caracteres>
@@ -117,9 +118,13 @@ Texto escrito hasta ahora:
 {written}
 
 Escribe SOLO el párrafo del momento {n}: «{beat}».
-Entre {min_words} y {max_words} palabras, de 3 a 5 frases CORTAS. Lenguaje simple y directo, como si se
-lo contaras a un amigo: nada de metáforas ni descripciones poéticas; di qué pasó, qué dijiste y qué
-sentiste. Primera persona, continúa el texto anterior sin repetirlo. {ending}{feedback}"""
+Entre {min_words} y {max_words} palabras, de 4 a 6 frases CORTAS. Lenguaje simple y directo, como si se
+lo contaras a un amigo: nada de metáforas ni descripciones poéticas.
+OBLIGATORIO: (1) incluye al menos un diálogo, lo que alguien dice entre comillas «así»; (2) el párrafo
+trae un dato nuevo o un giro concreto; (3) NO escribas «sentí miedo», «me dio miedo», «sentí
+frustración» ni nombres de emociones: muestra la reacción con una acción o un detalle (me temblaron
+las manos, dejé de respirar, cerré la puerta). Primera persona; continúa el texto anterior sin
+repetirlo. {ending}{feedback}"""
 
 _TITLE = re.compile(r"^\s*t[ií]tulo\s*:\s*(.+)$", re.IGNORECASE)
 _BEAT = re.compile(r"^\s*\d+\s*[.)\-:]\s*(.+)$")
@@ -130,6 +135,12 @@ def _clean(raw: str) -> str:
     return text.replace(CUT_MARKER, " ").strip()
 
 
+_DIALOGUE = re.compile(r"[«»\"“”—]")
+_TELLING = re.compile(
+    r"\b(sent[ií]\s+(mucho\s+)?(miedo|frustraci\w+|emoci\w+|nervios\w*|angustia|terror)|"
+    r"me\s+(dio|daba)\s+(mucho\s+)?(miedo|terror)|miedo\s+y\s+emoci\w+)\b",
+    re.IGNORECASE,
+)
 _VIOLENT = re.compile(
     r"\b(mat[ae]r?|mat[óo]|asesin\w*|cad[áa]ver\w*|sangre|sangrient\w*|enterr\w*|apu[ñn]al\w*|"
     r"degoll\w*|cuchill\w*|pistola|disparo\w*|tortur\w*|violaci[óo]n|suicid\w*)\b",
@@ -144,6 +155,10 @@ def _check_paragraph(text: str, *, min_words: int, max_words: int) -> None:
         problems.append(f"{words} palabras (se pedían {min_words}-{max_words})")
     if has_url(text):
         problems.append("contiene enlaces")
+    if not _DIALOGUE.search(text):
+        problems.append("no tiene ningún diálogo entre comillas «así»")
+    if hit := _TELLING.search(text):
+        problems.append(f"dice la emoción ({hit.group(0)!r}) en vez de mostrarla con una acción")
     if hit := _VIOLENT.search(text):
         problems.append(f"menciona violencia explícita ({hit.group(0)!r}): reescríbelo sin ella")
     if problems:
@@ -176,8 +191,8 @@ class StoryWriter:
         client: ChatClient,
         *,
         language: str = "español neutro",
-        beats: int = 8,
-        paragraph_words: tuple[int, int] = (22, 90),
+        beats: int = 10,
+        paragraph_words: tuple[int, int] = (35, 100),
         attempts: int = 4,
     ) -> None:
         if beats < 4 or beats % 2:
