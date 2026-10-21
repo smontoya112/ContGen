@@ -15,6 +15,10 @@ from storyclips.ffmpeg import FfmpegError, analyze_activity, probe_duration, run
 from storyclips.llm import ChatClient, LlmConfig, StoryError, StoryWriter
 from storyclips.models import Story
 from storyclips.pipeline import produce, slugify
+from storyclips.publish import cli as publish_cli
+from storyclips.publish.ledger import LedgerError
+from storyclips.publish.tiktok import TikTokError
+from storyclips.publish.youtube import YouTubeAuthError
 from storyclips.tts import TTS, FakeTTS, KokoroTTS, TtsUnavailable
 
 
@@ -144,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("batch", help="escribe y renderiza")
     _common(b, write=True, render=True)
     b.set_defaults(func=_cmd_batch)
+    publish_cli.add_parser(sub)
     return parser
 
 
@@ -152,6 +157,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args.func(args)
     except (
+        LedgerError,
+        TikTokError,
+        YouTubeAuthError,
         StoryError,
         NoBackground,
         FfmpegError,

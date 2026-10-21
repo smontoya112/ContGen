@@ -15,7 +15,7 @@ from storyclips.ffmpeg import Runner, clip_command, render_command
 from storyclips.models import Audio, Narration, Story
 from storyclips.narrate import narrate, write_wav
 from storyclips.subtitles import build_ass
-from storyclips.text import split_parts
+from storyclips.text import split_parts, split_sentences
 from storyclips.tts import TTS
 
 CARD_S = 2.2  # cuánto se ve «PARTE 1» al empezar y «Parte 2 en el siguiente video» al final
@@ -129,6 +129,7 @@ def produce(
         json.dumps(
             {
                 "title": story.title,
+                "hook": (split_sentences(story.text)[:1] or [""])[0][:200],
                 "parts": [
                     {
                         "index": r.index,

@@ -82,3 +82,27 @@ Qué falta confirmar en Hypatia: que haya Apptainer y `--fakeroot` para construi
 otra máquina y súbela), versión de CUDA/driver compatible con la imagen de vLLM (fija su etiqueta en
 `hpc/storyclips.def`), y la partición y GPU a usar. Una historia a la vez; si necesitas cientos, el siguiente
 paso es paralelizar las peticiones a vLLM.
+
+## Publicación programada (YouTube y TikTok)
+
+Todo es **simulación por defecto**; solo `--live` publica de verdad. Nunca se guardan contraseñas: YouTube usa un
+token OAuth en `~/.storyclips/youtube_token.json` y TikTok lee su token de la variable `STORYCLIPS_TIKTOK_TOKEN`.
+
+```bash
+uv sync --extra youtube
+uv run storyclips publish auth-youtube --client-secret client_secret.json   # una vez, abre el navegador
+uv run storyclips publish slots --times 18:00,21:00 --count 5               # próximos horarios libres
+uv run storyclips publish enqueue out/historia.mp4 --youtube-at 2026-11-03T18:00 --tiktok-at 2026-11-03T21:00
+uv run storyclips publish run                # simulación: muestra qué haría
+uv run storyclips publish run --live         # publica de verdad (YouTube se sube y queda programado)
+uv run storyclips publish status
+```
+
+- **YouTube:** se sube al momento como privado con `publishAt` (queda programado en la plataforma). Se declara
+  `selfDeclaredMadeForKids=false` (no es contenido infantil) y `containsSyntheticMedia=true` (voz y guion de IA).
+  Cada subida gasta ~1 600 unidades de cuota diaria; las apps sin auditar solo suben privado.
+- **TikTok:** su API no programa: la cola publica cuando llega la hora, así que `publish run --live` debe correr
+  periódicamente (p. ej. cada 15 min con el Programador de tareas o cron). Hasta que TikTok audite tu app solo
+  permite `SELF_ONLY` (privado). El video se marca como contenido generado por IA (`is_aigc`).
+- Ninguno de los dos clientes se ha ejecutado contra la API real; falta tu app/credenciales de cada plataforma.
+- Un video vertical de YouTube de hasta 3 minutos cuenta como Short; el de prueba dura 186 s, así que no lo es.
