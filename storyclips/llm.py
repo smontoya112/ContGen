@@ -177,8 +177,8 @@ class StoryWriter:
         *,
         language: str = "español neutro",
         beats: int = 8,
-        paragraph_words: tuple[int, int] = (30, 90),
-        attempts: int = 3,
+        paragraph_words: tuple[int, int] = (22, 90),
+        attempts: int = 4,
     ) -> None:
         if beats < 4 or beats % 2:
             raise ValueError("beats debe ser par y de al menos 4")

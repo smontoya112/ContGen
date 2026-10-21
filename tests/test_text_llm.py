@@ -139,15 +139,15 @@ def test_a_missing_title_falls_back_to_the_topic() -> None:
 
 
 def test_it_gives_up_after_the_allowed_attempts() -> None:
-    replies = [_outline(), "corto", "corto", "corto"]
-    with pytest.raises(StoryError, match="sin respuesta válida tras 3 intentos"):
+    replies = [_outline(), "corto", "corto", "corto", "corto"]
+    with pytest.raises(StoryError, match="sin respuesta válida tras 4 intentos"):
         _writer(replies).write("tema")
 
 
 def test_links_in_a_paragraph_are_refused() -> None:
     bad = _paragraph("l") + " Mira https://reddit.com/x"
     with pytest.raises(StoryError, match="enlaces"):
-        _writer([_outline(), bad, bad, bad]).write("tema")
+        _writer([_outline(), bad, bad, bad, bad]).write("tema")
 
 
 def test_beats_must_be_even_and_at_least_four() -> None:
@@ -187,7 +187,7 @@ def test_explicit_violence_is_refused_and_retried_with_the_reason() -> None:
 def test_the_violence_filter_catches_common_words(word: str) -> None:
     bad = _paragraph("v") + f" Había {word} ahí."
     with pytest.raises(StoryError, match="violencia"):
-        _writer([_outline(), bad, bad, bad]).write("tema")
+        _writer([_outline(), bad, bad, bad, bad]).write("tema")
 
 
 def test_the_prompts_ask_for_simple_direct_confession_style() -> None:
