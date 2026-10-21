@@ -23,7 +23,7 @@ _SYSTEM = (
     "Eres guionista de historias cortas para video vertical narradas en primera persona, con "
     "ganchos fuertes. Escribes ficción ORIGINAL: nunca copies ni adaptes publicaciones reales de "
     "Reddit u otras webs, ni uses personas reales, marcas o datos personales. Sin violencia gráfica, "
-    "sin contenido sexual, sin odio. Respondes SOLO con JSON."
+    "sin contenido sexual, sin odio."
 )
 
 _USER = """Escribe una historia original sobre: {topic}.
@@ -109,33 +109,99 @@ def parse_story(raw: str, *, min_words: int, max_words: int) -> Story:
     return Story(title=title, text=text)
 
 
+_PART1 = """Escribe la PARTE 1 de una historia original sobre: {topic}.
+Idioma: {language}.
+Primera línea exacta: TITULO: <título de máximo 80 caracteres>
+Después, el texto: entre {min_words} y {max_words} palabras (unas 12 a 20 frases). Menos de
+{min_words} palabras es INCORRECTO: desarrolla con detalles y escenas.
+Reglas: primera persona, frases cortas, ritmo rápido, gancho en la primera frase.
+La parte debe terminar en el momento MÁS tenso, justo antes de una revelación, con una frase de
+suspenso. No resuelvas nada. Escribe solo el título y el texto, sin comentarios.{feedback}"""
+
+_PART2 = """Esta es la PARTE 1 de una historia original:
+
+{part1}
+
+Escribe la PARTE 2: continúa exactamente donde termina la parte 1 y cierra la historia con la
+revelación y un último giro. Mismo estilo y narrador. Entre {min_words} y {max_words} palabras
+(unas 12 a 20 frases); menos de {min_words} palabras es INCORRECTO.
+Escribe solo el texto de la parte 2, sin título ni comentarios.{feedback}"""
+
+_TITLE = re.compile(r"^\s*t[ií]tulo\s*:\s*(.+)$", re.IGNORECASE)
+
+
+def _clean(raw: str) -> str:
+    text = _FENCE.sub("", raw.strip()).strip()
+    return text.replace(CUT_MARKER, " ").strip()
+
+
+def _check_part(text: str, *, min_words: int, max_words: int) -> None:
+    words = len(text.split())
+    problems: list[str] = []
+    if not min_words <= words <= max_words:
+        problems.append(f"{words} palabras (se pedían {min_words}-{max_words})")
+    if has_url(text):
+        problems.append("contiene enlaces")
+    if len(split_sentences(text)) < 5:
+        problems.append("tiene menos de 5 frases")
+    if problems:
+        raise StoryError("; ".join(problems))
+
+
 class StoryWriter:
+    """Escribe en DOS llamadas (parte 1 que acaba en el momento más tenso, y parte 2 que continúa).
+
+    Un LLM pequeño cumple mejor dos tareas cortas que una larga, y el corte coincide con el de los
+    videos. Cada llamada se valida y reintenta con los motivos como feedback.
+    """
+
     def __init__(
         self,
         client: ChatClient,
         *,
         language: str = "español neutro",
-        min_words: int = 220,
-        max_words: int = 420,
+        min_words: int = 110,
+        max_words: int = 230,
         attempts: int = 3,
     ) -> None:
         self._client = client
         self._language = language
         self._min, self._max, self._attempts = min_words, max_words, attempts
 
-    def write(self, topic: str) -> Story:
+    def _ask(self, template: str, **fields: str) -> str:
         feedback = ""
         last: StoryError | None = None
         for _ in range(self._attempts):
-            prompt = _USER.format(
-                topic=topic, language=self._language, min_words=self._min, max_words=self._max,
-                marker=CUT_MARKER, feedback=feedback,
+            prompt = template.format(
+                language=self._language, min_words=self._min, max_words=self._max,
+                feedback=feedback, **fields,
             )  # fmt: skip
+            raw = self._client.complete(_SYSTEM, prompt)
             try:
-                return parse_story(
-                    self._client.complete(_SYSTEM, prompt), min_words=self._min, max_words=self._max
-                )
+                _check_part(_clean(_strip_title(raw)[1]), min_words=self._min, max_words=self._max)
+                return raw
             except StoryError as exc:
                 last = exc
                 feedback = f"\nLa respuesta anterior falló: {exc}. Corrígelo."
-        raise StoryError(f"sin historia válida tras {self._attempts} intentos: {last}")
+        raise StoryError(f"sin texto válido tras {self._attempts} intentos: {last}")
+
+    def write(self, topic: str) -> Story:
+        raw1 = self._ask(_PART1, topic=topic)
+        title, body1 = _strip_title(raw1)
+        part1 = _clean(body1)
+        if not title or len(title) > 100:
+            title = topic[:80].capitalize()
+        part2 = _clean(self._ask(_PART2, part1=part1))
+        return Story(title=title, text=f"{part1}\n{CUT_MARKER}\n{part2}")
+
+
+def _strip_title(raw: str) -> tuple[str, str]:
+    """(título, cuerpo): el título es la línea `TITULO: …` si la hay."""
+    lines = _FENCE.sub("", raw.strip()).strip().splitlines()
+    for i, line in enumerate(lines):
+        match = _TITLE.match(line)
+        if match:
+            return match.group(1).strip().strip('"*'), "\n".join(lines[:i] + lines[i + 1 :])
+        if line.strip():
+            break
+    return "", "\n".join(lines)

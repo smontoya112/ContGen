@@ -69,30 +69,46 @@ def _client(handler) -> ChatClient:
     return ChatClient(LlmConfig(base_url="http://llm.test/v1", model="qwen-test"), http)
 
 
-def test_the_writer_returns_a_valid_story_and_sends_an_openai_request() -> None:
-    seen: list[httpx.Request] = []
+def _part(n: int = 14, tag: str = "a") -> str:
+    return " ".join(f"Esta es la frase {tag} número {i} de la parte." for i in range(n))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(200, json=_reply())
 
-    story = StoryWriter(_client(handler), min_words=100, max_words=500).write(
-        "un vecino misterioso"
+def _chat(content: str) -> httpx.Response:
+    return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+
+def _writer(handler, **kw) -> StoryWriter:
+    return StoryWriter(_client(handler), min_words=60, max_words=400, **kw)
+
+
+def test_the_writer_makes_two_calls_and_joins_the_parts_at_the_cut() -> None:
+    seen: list[dict] = []
+    answers = iter(
+        [_chat("TITULO: El vecino del sótano\n" + _part(tag="uno")), _chat(_part(tag="dos"))]
     )
 
-    assert story.title == "Mi vecino" and CUT_MARKER in story.text
-    body = json.loads(seen[0].content)
-    assert seen[0].url.path == "/v1/chat/completions" and body["model"] == "qwen-test"
-    assert "un vecino misterioso" in body["messages"][1]["content"]
-    assert "nunca copies" in body["messages"][0]["content"].lower()  # historias originales
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return next(answers)
+
+    story = _writer(handler).write("un vecino misterioso")
+
+    assert story.title == "El vecino del sótano"
+    first, second = story.text.split(CUT_MARKER)
+    assert "frase uno" in first and "frase dos" in second
+    assert len(seen) == 2 and seen[0]["model"] == "qwen-test"
+    assert "un vecino misterioso" in seen[0]["messages"][1]["content"]
+    assert "frase uno" in seen[1]["messages"][1]["content"]  # la parte 2 recibe la parte 1
+    assert "nunca copies" in seen[0]["messages"][0]["content"].lower()  # historias originales
 
 
-def test_a_bad_answer_is_retried_with_the_reason_as_feedback() -> None:
+def test_a_short_part_is_retried_with_the_reason_as_feedback() -> None:
     prompts: list[str] = []
     answers = iter(
         [
-            httpx.Response(200, json={"choices": [{"message": {"content": "no es json"}}]}),
-            httpx.Response(200, json=_reply()),
+            _chat("TITULO: T\nMuy corta. Mucho."),
+            _chat("TITULO: T\n" + _part()),
+            _chat(_part(tag="dos")),
         ]
     )
 
@@ -100,18 +116,27 @@ def test_a_bad_answer_is_retried_with_the_reason_as_feedback() -> None:
         prompts.append(json.loads(request.content)["messages"][1]["content"])
         return next(answers)
 
-    story = StoryWriter(_client(handler), min_words=100, max_words=500).write("tema")
+    story = _writer(handler).write("tema")
 
-    assert story.title == "Mi vecino" and len(prompts) == 2
-    assert "falló" in prompts[1] and "JSON" in prompts[1]
+    assert story.title == "T" and len(prompts) == 3
+    assert "falló" in prompts[1] and "palabras" in prompts[1]
+
+
+def test_a_missing_title_falls_back_to_the_topic() -> None:
+    answers = iter([_chat(_part()), _chat(_part(tag="dos"))])
+    story = _writer(lambda r: next(answers)).write("un vecino raro")
+    assert story.title == "Un vecino raro"
 
 
 def test_it_gives_up_after_the_allowed_attempts() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_reply(story="Muy corta. Mucho."))
+    with pytest.raises(StoryError, match="sin texto válido tras 3 intentos"):
+        _writer(lambda r: _chat("Muy corta. Mucho.")).write("tema")
 
-    with pytest.raises(StoryError, match="sin historia válida tras 3 intentos"):
-        StoryWriter(_client(handler)).write("tema")
+
+def test_links_are_refused() -> None:
+    answers = iter([_chat("TITULO: T\n" + _part() + " Mira https://reddit.com/x")] * 3)
+    with pytest.raises(StoryError, match="enlaces"):
+        _writer(lambda r: next(answers)).write("tema")
 
 
 @pytest.mark.parametrize(
