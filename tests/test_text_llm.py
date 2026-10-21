@@ -69,74 +69,91 @@ def _client(handler) -> ChatClient:
     return ChatClient(LlmConfig(base_url="http://llm.test/v1", model="qwen-test"), http)
 
 
-def _part(n: int = 14, tag: str = "a") -> str:
-    return " ".join(f"Esta es la frase {tag} número {i} de la parte." for i in range(n))
+def _paragraph(tag: str, n: int = 40) -> str:
+    return " ".join(f"palabra{tag}{i}" for i in range(n)) + "."
+
+
+def _outline(beats: int = 8, title: str | None = "El vecino del sótano") -> str:
+    lines = [f"TITULO: {title}"] if title else []
+    return "\n".join(lines + [f"{i}. Pasa algo número {i}" for i in range(1, beats + 1)])
 
 
 def _chat(content: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
 
-def _writer(handler, **kw) -> StoryWriter:
-    return StoryWriter(_client(handler), min_words=60, max_words=400, **kw)
-
-
-def test_the_writer_makes_two_calls_and_joins_the_parts_at_the_cut() -> None:
-    seen: list[dict] = []
-    answers = iter(
-        [_chat("TITULO: El vecino del sótano\n" + _part(tag="uno")), _chat(_part(tag="dos"))]
-    )
+def _writer(replies: list[str], prompts: list[str] | None = None, **kw) -> StoryWriter:
+    answers = iter(replies)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(json.loads(request.content))
-        return next(answers)
+        if prompts is not None:
+            prompts.append(json.loads(request.content)["messages"][1]["content"])
+        return _chat(next(answers))
 
-    story = _writer(handler).write("un vecino misterioso")
+    return StoryWriter(_client(handler), **kw)
+
+
+def _story_replies() -> list[str]:
+    return [_outline(), *[_paragraph(str(i)) for i in range(1, 9)]]
+
+
+def test_the_writer_builds_the_story_from_an_outline_and_cuts_at_the_tense_moment() -> None:
+    prompts: list[str] = []
+    story = _writer(_story_replies(), prompts).write("un vecino misterioso")
 
     assert story.title == "El vecino del sótano"
     first, second = story.text.split(CUT_MARKER)
-    assert "frase uno" in first and "frase dos" in second
-    assert len(seen) == 2 and seen[0]["model"] == "qwen-test"
-    assert "un vecino misterioso" in seen[0]["messages"][1]["content"]
-    assert "frase uno" in seen[1]["messages"][1]["content"]  # la parte 2 recibe la parte 1
-    assert "nunca copies" in seen[0]["messages"][0]["content"].lower()  # historias originales
+    assert "palabra11" in first and "palabra41" in first and "palabra51" not in first
+    assert "palabra51" in second and "palabra81" in second
+    assert len(prompts) == 9 and "un vecino misterioso" in prompts[0]
+    assert "palabra11" in prompts[2]  # cada párrafo ve lo ya escrito
+    assert (
+        "SIN revelar" in prompts[4] and "SIN revelar" not in prompts[3]
+    )  # el momento 4 acaba en suspenso
+    assert "cierra la historia" in prompts[8]
 
 
-def test_a_short_part_is_retried_with_the_reason_as_feedback() -> None:
+def test_the_story_is_long_enough_for_a_minute_and_a_half_of_voice() -> None:
+    story = _writer(_story_replies()).write("tema")
+    assert len(story.text.replace(CUT_MARKER, " ").split()) >= 8 * 28
+
+
+def test_a_wrong_outline_is_retried_with_the_reason() -> None:
     prompts: list[str] = []
-    answers = iter(
-        [
-            _chat("TITULO: T\nMuy corta. Mucho."),
-            _chat("TITULO: T\n" + _part()),
-            _chat(_part(tag="dos")),
-        ]
-    )
+    replies = [_outline(beats=5), *_story_replies()]
+    story = _writer(replies, prompts).write("tema")
+    assert story.title == "El vecino del sótano"
+    assert "falló" in prompts[1] and "5 momentos" in prompts[1]
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        prompts.append(json.loads(request.content)["messages"][1]["content"])
-        return next(answers)
 
-    story = _writer(handler).write("tema")
-
-    assert story.title == "T" and len(prompts) == 3
-    assert "falló" in prompts[1] and "palabras" in prompts[1]
+def test_a_short_paragraph_is_retried_with_the_reason() -> None:
+    prompts: list[str] = []
+    replies = [_outline(), _paragraph("x", 5), *[_paragraph(str(i)) for i in range(1, 9)]]
+    _writer(replies, prompts).write("tema")
+    assert "falló" in prompts[2] and "5 palabras" in prompts[2]
 
 
 def test_a_missing_title_falls_back_to_the_topic() -> None:
-    answers = iter([_chat(_part()), _chat(_part(tag="dos"))])
-    story = _writer(lambda r: next(answers)).write("un vecino raro")
-    assert story.title == "Un vecino raro"
+    replies = [_outline(title=None), *[_paragraph(str(i)) for i in range(1, 9)]]
+    assert _writer(replies).write("un vecino raro").title == "Un vecino raro"
 
 
 def test_it_gives_up_after_the_allowed_attempts() -> None:
-    with pytest.raises(StoryError, match="sin texto válido tras 3 intentos"):
-        _writer(lambda r: _chat("Muy corta. Mucho.")).write("tema")
+    replies = [_outline(), "corto", "corto", "corto"]
+    with pytest.raises(StoryError, match="sin respuesta válida tras 3 intentos"):
+        _writer(replies).write("tema")
 
 
-def test_links_are_refused() -> None:
-    answers = iter([_chat("TITULO: T\n" + _part() + " Mira https://reddit.com/x")] * 3)
+def test_links_in_a_paragraph_are_refused() -> None:
+    bad = _paragraph("l") + " Mira https://reddit.com/x"
     with pytest.raises(StoryError, match="enlaces"):
-        _writer(lambda r: next(answers)).write("tema")
+        _writer([_outline(), bad, bad, bad]).write("tema")
+
+
+def test_beats_must_be_even_and_at_least_four() -> None:
+    for beats in (3, 5, 2):
+        with pytest.raises(ValueError, match="par"):
+            StoryWriter(_client(lambda r: _chat("")), beats=beats)
 
 
 @pytest.mark.parametrize(

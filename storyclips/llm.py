@@ -109,25 +109,28 @@ def parse_story(raw: str, *, min_words: int, max_words: int) -> Story:
     return Story(title=title, text=text)
 
 
-_PART1 = """Escribe la PARTE 1 de una historia original sobre: {topic}.
+_OUTLINE = """Diseña el esquema de una historia original sobre: {topic}.
 Idioma: {language}.
-Primera línea exacta: TITULO: <título de máximo 80 caracteres>
-Después, el texto: entre {min_words} y {max_words} palabras (unas 12 a 20 frases). Menos de
-{min_words} palabras es INCORRECTO: desarrolla con detalles y escenas.
-Reglas: primera persona, frases cortas, ritmo rápido, gancho en la primera frase.
-La parte debe terminar en el momento MÁS tenso, justo antes de una revelación, con una frase de
-suspenso. No resuelvas nada. Escribe solo el título y el texto, sin comentarios.{feedback}"""
+Escribe exactamente {beats} momentos numerados (1. a {beats}.), uno por línea, cada uno de una sola frase
+que diga QUÉ pasa. Reglas: narrador en primera persona; el momento 1 es un gancho fuerte; el momento
+{cut} es el de MÁXIMA tensión, justo antes de una revelación, y no se resuelve; del {next_beat} en
+adelante se revela y se cierra con un último giro.
+Primera línea exacta, antes de la lista: TITULO: <título de máximo 80 caracteres>
+Sin comentarios.{feedback}"""
 
-_PART2 = """Esta es la PARTE 1 de una historia original:
+_PARAGRAPH = """Historia: {title}. Idioma: {language}.
+Esquema:
+{outline}
 
-{part1}
+Texto escrito hasta ahora:
+{written}
 
-Escribe la PARTE 2: continúa exactamente donde termina la parte 1 y cierra la historia con la
-revelación y un último giro. Mismo estilo y narrador. Entre {min_words} y {max_words} palabras
-(unas 12 a 20 frases); menos de {min_words} palabras es INCORRECTO.
-Escribe solo el texto de la parte 2, sin título ni comentarios.{feedback}"""
+Escribe SOLO el párrafo del momento {n}: «{beat}».
+Entre {min_words} y {max_words} palabras (4 a 6 frases cortas), primera persona, con detalles y
+sensaciones. Continúa el texto anterior sin repetirlo. {ending}{feedback}"""
 
 _TITLE = re.compile(r"^\s*t[ií]tulo\s*:\s*(.+)$", re.IGNORECASE)
+_BEAT = re.compile(r"^\s*\d+\s*[.)\-:]\s*(.+)$")
 
 
 def _clean(raw: str) -> str:
@@ -135,24 +138,36 @@ def _clean(raw: str) -> str:
     return text.replace(CUT_MARKER, " ").strip()
 
 
-def _check_part(text: str, *, min_words: int, max_words: int) -> None:
+def _check_paragraph(text: str, *, min_words: int, max_words: int) -> None:
     words = len(text.split())
     problems: list[str] = []
     if not min_words <= words <= max_words:
         problems.append(f"{words} palabras (se pedían {min_words}-{max_words})")
     if has_url(text):
         problems.append("contiene enlaces")
-    if len(split_sentences(text)) < 5:
-        problems.append("tiene menos de 5 frases")
     if problems:
         raise StoryError("; ".join(problems))
 
 
-class StoryWriter:
-    """Escribe en DOS llamadas (parte 1 que acaba en el momento más tenso, y parte 2 que continúa).
+def parse_outline(raw: str, beats: int) -> tuple[str, list[str]]:
+    """(título, momentos) de la respuesta del esquema; falla si no hay exactamente `beats` momentos."""
+    title, items = "", []
+    for line in _FENCE.sub("", raw.strip()).strip().splitlines():
+        if (match := _TITLE.match(line)) and not title:
+            title = match.group(1).strip().strip('"*')
+        elif match := _BEAT.match(line):
+            items.append(match.group(1).strip())
+    if len(items) != beats:
+        raise StoryError(f"el esquema tiene {len(items)} momentos (se pedían {beats})")
+    return title, items
 
-    Un LLM pequeño cumple mejor dos tareas cortas que una larga, y el corte coincide con el de los
-    videos. Cada llamada se valida y reintenta con los motivos como feedback.
+
+class StoryWriter:
+    """Escribe por pasos: un esquema de `beats` momentos y un párrafo por momento.
+
+    Un LLM pequeño no respeta la longitud pedida de un tirón (salían 23-90 palabras en vez de 220+),
+    pero sí cumple tareas cortas: la longitud queda controlada por el número de párrafos. El momento
+    de máxima tensión (`cut`) cierra la parte 1; la parte 2 continúa y resuelve.
     """
 
     def __init__(
@@ -160,48 +175,76 @@ class StoryWriter:
         client: ChatClient,
         *,
         language: str = "español neutro",
-        min_words: int = 110,
-        max_words: int = 230,
+        beats: int = 8,
+        paragraph_words: tuple[int, int] = (28, 110),
         attempts: int = 3,
     ) -> None:
+        if beats < 4 or beats % 2:
+            raise ValueError("beats debe ser par y de al menos 4")
         self._client = client
         self._language = language
-        self._min, self._max, self._attempts = min_words, max_words, attempts
+        self._beats = beats
+        self._min, self._max = paragraph_words
+        self._attempts = attempts
 
-    def _ask(self, template: str, **fields: str) -> str:
-        feedback = ""
-        last: StoryError | None = None
+    def _retry(self, prompt_for, validate):
+        feedback, last = "", None
         for _ in range(self._attempts):
-            prompt = template.format(
-                language=self._language, min_words=self._min, max_words=self._max,
-                feedback=feedback, **fields,
-            )  # fmt: skip
-            raw = self._client.complete(_SYSTEM, prompt)
+            raw = self._client.complete(_SYSTEM, prompt_for(feedback))
             try:
-                _check_part(_clean(_strip_title(raw)[1]), min_words=self._min, max_words=self._max)
-                return raw
+                return validate(raw)
             except StoryError as exc:
                 last = exc
                 feedback = f"\nLa respuesta anterior falló: {exc}. Corrígelo."
-        raise StoryError(f"sin texto válido tras {self._attempts} intentos: {last}")
+        raise StoryError(f"sin respuesta válida tras {self._attempts} intentos: {last}")
 
     def write(self, topic: str) -> Story:
-        raw1 = self._ask(_PART1, topic=topic)
-        title, body1 = _strip_title(raw1)
-        part1 = _clean(body1)
+        cut = self._beats // 2
+        title, beats = self._retry(
+            lambda fb: _OUTLINE.format(
+                topic=topic,
+                language=self._language,
+                beats=self._beats,
+                cut=cut,
+                next_beat=cut + 1,
+                feedback=fb,
+            ),  # fmt: skip
+            lambda raw: parse_outline(raw, self._beats),
+        )
         if not title or len(title) > 100:
             title = topic[:80].capitalize()
-        part2 = _clean(self._ask(_PART2, part1=part1))
-        return Story(title=title, text=f"{part1}\n{CUT_MARKER}\n{part2}")
+        outline = "\n".join(f"{i}. {b}" for i, b in enumerate(beats, start=1))
 
+        paragraphs: list[str] = []
+        for n, beat in enumerate(beats, start=1):
+            ending = (
+                "Termina con una frase de suspenso, SIN revelar lo que sigue. "
+                if n == cut
+                else "Si es el último momento, cierra la historia con un giro. "
+                if n == self._beats
+                else ""
+            )
+            written = "\n".join(paragraphs) or "(todavía nada: empieza la historia)"
+            paragraph = self._retry(
+                lambda fb, n=n, beat=beat, ending=ending, written=written: _PARAGRAPH.format(
+                    title=title,
+                    language=self._language,
+                    outline=outline,
+                    written=written,
+                    n=n,
+                    beat=beat,
+                    min_words=self._min,
+                    max_words=self._max,
+                    ending=ending,
+                    feedback=fb,
+                ),  # fmt: skip
+                lambda raw: self._valid_paragraph(raw),
+            )
+            paragraphs.append(paragraph)
+        first, second = "\n".join(paragraphs[:cut]), "\n".join(paragraphs[cut:])
+        return Story(title=title, text=f"{first}\n{CUT_MARKER}\n{second}")
 
-def _strip_title(raw: str) -> tuple[str, str]:
-    """(título, cuerpo): el título es la línea `TITULO: …` si la hay."""
-    lines = _FENCE.sub("", raw.strip()).strip().splitlines()
-    for i, line in enumerate(lines):
-        match = _TITLE.match(line)
-        if match:
-            return match.group(1).strip().strip('"*'), "\n".join(lines[:i] + lines[i + 1 :])
-        if line.strip():
-            break
-    return "", "\n".join(lines)
+    def _valid_paragraph(self, raw: str) -> str:
+        text = _clean(raw)
+        _check_paragraph(text, min_words=self._min, max_words=self._max)
+        return text
