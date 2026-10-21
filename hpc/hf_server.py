@@ -58,6 +58,7 @@ def make_handler(tokenizer, model, name: str, max_new_tokens: int):
                 text = tokenizer.decode(
                     out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
                 )
+                print(f"respuesta ({len(text.split())} palabras): {text[:700]!r}", flush=True)
                 self._send(
                     200,
                     {

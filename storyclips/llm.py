@@ -28,7 +28,8 @@ _SYSTEM = (
 
 _USER = """Escribe una historia original sobre: {topic}.
 Idioma: {language}.
-Longitud total: entre {min_words} y {max_words} palabras.
+Longitud total: entre {min_words} y {max_words} palabras (unas 25 a 35 frases). Una historia con
+menos de {min_words} palabras es INCORRECTA: desarrolla la trama con detalles, diálogos y escenas.
 Reglas:
 - Primera persona, frases cortas, ritmo rápido, un gancho en la primera frase.
 - Coloca la marca {marker} en una línea sola en el momento MÁS tenso de la historia (un giro o un
