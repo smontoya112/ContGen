@@ -429,3 +429,111 @@ def test_cli_slots(tmp_path: Path, capsys) -> None:
     )
     lines = capsys.readouterr().out.split()
     assert len(lines) == 2 and all(s.endswith("-05:00") for s in lines)
+
+
+# ------------------------------------------------------------------ varias historias de dos partes
+
+
+def _story_folder(tmp_path: Path, stories: int = 2) -> Path:
+    folder = tmp_path / "out"
+    folder.mkdir()
+    for n in range(1, stories + 1):
+        slug = f"historia-{n}-abc123"
+        (folder / f"{slug}.json").write_text(
+            json.dumps(
+                {
+                    "title": f"Historia {n}",
+                    "hook": "gancho general",
+                    "parts": [
+                        {
+                            "index": 1,
+                            "title": f"Historia {n} (Parte 1/2)",
+                            "hook": "Empezó así.",
+                            "file": f"{slug}_parte1.mp4",
+                        },
+                        {
+                            "index": 2,
+                            "title": f"Historia {n} (Parte 2/2)",
+                            "hook": "Y terminó asá.",
+                            "file": f"{slug}_parte2.mp4",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        for part in (1, 2):
+            (folder / f"{slug}_parte{part}.mp4").write_bytes(b"0" * 100)
+    return folder
+
+
+def test_a_part_uses_its_own_title_and_hook_from_the_story_file(tmp_path: Path) -> None:
+    folder = _story_folder(tmp_path, 1)
+    first = load_sidecar(folder / "historia-1-abc123_parte1.mp4")
+    assert (
+        first["title"] == "Historia 1 (Parte 1/2)"
+        and first["hook"] == "Empezó así."
+        and first["part"] == 1
+    )
+    _, description, _ = build_metadata(first)
+    assert description.startswith("Empezó así.") and "Continúa en la parte 2." in description
+    _, last_description, _ = build_metadata(load_sidecar(folder / "historia-1-abc123_parte2.mp4"))
+    assert "Continúa" not in last_description
+
+
+def test_enqueue_all_schedules_every_part_in_consecutive_slots(tmp_path: Path, capsys) -> None:
+    folder = _story_folder(tmp_path, 2)
+    q = str(tmp_path / "q.json")
+
+    code = main(
+        [
+            "publish",
+            "enqueue-all",
+            str(folder),
+            "--ledger",
+            q,
+            "--times",
+            "12:00,18:00",
+            "--start",
+            "2099-03-01T00:00",
+        ]
+    )
+
+    assert code == 0 and "4 video(s) encolados" in capsys.readouterr().out
+    entries = sorted(json.loads(Path(q).read_text(encoding="utf-8")), key=lambda e: e["publish_at"])
+    assert [e["title"] for e in entries] == [
+        "Historia 1 (Parte 1/2)", "Historia 1 (Parte 2/2)", "Historia 2 (Parte 1/2)", "Historia 2 (Parte 2/2)",
+    ]  # fmt: skip
+    assert [e["publish_at"][:16] for e in entries][:2] == [
+        "2099-03-01T17:00",
+        "2099-03-01T23:00",
+    ]  # 12:00 y 18:00 Bogotá
+    # ejecutarlo otra vez no duplica nada
+    assert (
+        main(["publish", "enqueue-all", str(folder), "--ledger", q, "--start", "2099-03-01T00:00"])
+        == 0
+    )
+    assert len(json.loads(Path(q).read_text(encoding="utf-8"))) == 4
+
+
+def test_max_uploads_respects_the_daily_quota(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "q.json")
+    for n in range(5):
+        video = tmp_path / f"v{n}.mp4"
+        video.write_bytes(b"0")
+        ledger.enqueue(
+            video=video,
+            platform="youtube",
+            title=f"t{n}",
+            description="d",
+            tags=[],
+            publish_at=NOW + timedelta(days=n + 1),
+        )
+    yt = FakeYouTube()
+
+    report = run(ledger, NOW, youtube=lambda: yt, live=True, max_uploads=2)
+
+    assert len(yt.calls) == 2 and report.count("upload") == 2 and report.count("wait") == 3
+    assert sorted(e.status for e in ledger.entries()).count("queued") == 3
+    run(ledger, NOW, youtube=lambda: yt, live=True, max_uploads=2)  # el día siguiente: otras 2
+    assert len(yt.calls) == 4

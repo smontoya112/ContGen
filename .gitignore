@@ -10,3 +10,6 @@ stories/
 out/
 .env
 out_hypatia/
+out_trabajo*/
+render_*.log
+*.activity.json

@@ -30,6 +30,7 @@ class PartResult:
     video: Path
     duration_s: float
     background: str
+    hook: str = ""
 
 
 def slugify(title: str) -> str:
@@ -122,6 +123,7 @@ def produce(
                 video,
                 round(duration, 2),
                 segment.path.name,
+                sentences[0][:200],
             )
         )
 
@@ -136,6 +138,7 @@ def produce(
                         "title": r.title,
                         "file": r.video.name,
                         "duration_s": r.duration_s,
+                        "hook": r.hook,
                     }
                     for r in results
                 ],

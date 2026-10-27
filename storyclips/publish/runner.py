@@ -39,13 +39,20 @@ class PublishConfig:
     synthetic_media: bool = True  # voz y guion generados por IA: se declara
 
 
-def plan(ledger: Ledger, now: datetime) -> list[Action]:
+def plan(ledger: Ledger, now: datetime, max_uploads: int | None = None) -> list[Action]:
     """Qué haría ahora: YouTube se sube ya (queda programado en la plataforma); TikTok espera su hora."""
     actions = []
+    youtube_left = max_uploads
     for entry in ledger.pending(now):
         if not Path(entry.video).exists():
             actions.append(Action(entry, "skip", "el archivo de video ya no existe"))
         elif entry.platform == "youtube":
+            if youtube_left is not None and youtube_left <= 0:
+                actions.append(
+                    Action(entry, "wait", "se sube en otra ejecución (límite diario de cuota)")
+                )
+                continue
+            youtube_left = None if youtube_left is None else youtube_left - 1
             actions.append(Action(entry, "upload", f"subir y programar para {entry.publish_at}"))
         elif entry.when() <= now:
             actions.append(Action(entry, "upload", "publicar ahora (ya es su hora)"))
@@ -62,10 +69,11 @@ def run(
     tiktok: Callable[[], TikTokClient] | None = None,
     live: bool = False,
     config: PublishConfig | None = None,
+    max_uploads: int | None = None,
 ) -> RunReport:
     """Ejecuta (o simula) lo pendiente. Los clientes se crean solo si hace falta (perezosos)."""
     config = config or PublishConfig()
-    actions = plan(ledger, now)
+    actions = plan(ledger, now, max_uploads)
     if not live:
         return RunReport(actions)
 

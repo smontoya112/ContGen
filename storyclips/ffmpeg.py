@@ -61,7 +61,7 @@ def render_command(
     if not _SAFE_NAME.match(ass_name):
         raise ValueError(f"nombre de subtítulos no permitido: {ass_name!r}")
     video = (
-        f"[0:v]crop=ih*{width}/{height}:ih,scale={width}:{height},setsar=1,fps={fps},"
+        f"[0:v]crop=ih*{width}/{height}:ih,scale={width}:{height}:flags=lanczos,setsar=1,fps={fps},"
         f"subtitles={ass_name}[v]"
     )
     repeat = ["-stream_loop", "-1"] if loop else []  # el fondo es un clip corto que se repite
@@ -71,8 +71,8 @@ def render_command(
         "-i", os.fspath(voice),
         "-filter_complex", video, "-map", "[v]", "-map", "1:a",
         "-t", f"{duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "5M", "-bufsize", "10M",
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart", os.fspath(out),
     ]  # fmt: skip
 

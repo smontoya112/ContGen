@@ -48,6 +48,36 @@ def _enqueue(args: argparse.Namespace) -> None:
     ledger.save()
 
 
+def _enqueue_all(args: argparse.Namespace) -> None:
+    """Encola todos los videos de una carpeta en horarios consecutivos (parte 1, parte 2, siguiente historia…)."""
+    ledger = _ledger(args)
+    videos = sorted(Path(args.folder).glob("*.mp4"))
+    if not videos:
+        raise FileNotFoundError(f"no hay videos .mp4 en {args.folder}")
+    queued = {Path(e.video).name for e in ledger.entries("youtube")}
+    videos = [v for v in videos if v.name not in queued]
+    hours = [time.fromisoformat(h) for h in args.times.split(",")]
+    after = parse_local(args.start, args.tz) if args.start else datetime.now(UTC)
+    taken = [e.when() for e in ledger.entries()]
+    for video, slot in zip(
+        videos, next_slots(after, hours, len(videos), tz=args.tz, taken=taken), strict=True
+    ):
+        title, description, tags = build_metadata(
+            load_sidecar(video), args.tags.split(",") if args.tags else None
+        )
+        entry = ledger.enqueue(
+            video=video,
+            platform="youtube",
+            title=title,
+            description=description,
+            tags=tags,
+            publish_at=slot,
+        )
+        print(f"{slot:%Y-%m-%d %H:%M} {args.tz.split('/')[-1]}  {video.name}  ({entry.title})")
+    ledger.save()
+    print(f"{len(videos)} video(s) encolados en YouTube")
+
+
 def _slots(args: argparse.Namespace) -> None:
     hours = [time.fromisoformat(h) for h in args.times.split(",")]
     taken = [e.when() for e in _ledger(args).entries()]
@@ -86,6 +116,7 @@ def _run(args: argparse.Namespace) -> None:
         tiktok=tiktok,
         live=args.live,
         config=PublishConfig(language=args.language, tiktok_privacy=args.tiktok_privacy),
+        max_uploads=args.max_uploads,
     )
     mode = "EN VIVO" if args.live else "SIMULACIÓN (añade --live para publicar de verdad)"
     print(f"[{mode}]")
@@ -117,6 +148,19 @@ def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-ar
     e.add_argument("--tags", help="etiquetas extra separadas por coma")
     e.set_defaults(func=_enqueue)
 
+    ea = publish.add_parser(
+        "enqueue-all", help="encola todos los .mp4 de una carpeta en horarios consecutivos"
+    )
+    common(ea)
+    ea.add_argument("folder")
+    ea.add_argument("--times", default="12:00,18:00", help="horas del día, p. ej. 12:00,18:00")
+    ea.add_argument(
+        "--start", help="no antes de AAAA-MM-DDTHH:MM (hora de --tz); por defecto, ahora"
+    )
+    ea.add_argument("--tz", default=DEFAULT_TZ)
+    ea.add_argument("--tags")
+    ea.set_defaults(func=_enqueue_all)
+
     s = publish.add_parser("slots", help="próximos horarios libres a esas horas diarias")
     common(s)
     s.add_argument("--times", default="18:00,21:00", help="horas del día, p. ej. 12:00,18:00,21:00")
@@ -129,6 +173,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-ar
     r.add_argument("--live", action="store_true", help="publica DE VERDAD (usa tus credenciales)")
     r.add_argument("--youtube-token", default=str(HOME / "youtube_token.json"))
     r.add_argument("--language", default="es")
+    r.add_argument(
+        "--max-uploads",
+        type=int,
+        default=6,
+        help="subidas a YouTube por ejecución (cuota diaria ~6)",
+    )
     r.add_argument(
         "--tiktok-privacy", default="SELF_ONLY", help="SELF_ONLY hasta que TikTok audite tu app"
     )
