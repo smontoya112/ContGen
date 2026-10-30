@@ -103,6 +103,14 @@ class Ledger:
         todo = [e for e in self._entries.values() if e.status in ("queued", "failed")]
         return sorted(todo, key=lambda e: e.when())
 
+    def reschedule(self, entry: Entry, when: datetime) -> bool:
+        """Cambia la hora de una entrada que aún no se subió (y limpia su error)."""
+        if entry.status not in ("queued", "failed"):
+            return False
+        entry.publish_at = when.astimezone(UTC).isoformat()
+        entry.status, entry.error = "queued", None
+        return True
+
     def refresh(self, entry: Entry, *, title: str, description: str, tags: list[str]) -> bool:
         """Actualiza el texto de una entrada que aún no se subió; devuelve si cambió algo."""
         if entry.status not in ("queued", "failed"):

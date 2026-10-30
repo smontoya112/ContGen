@@ -585,3 +585,34 @@ def test_refresh_updates_only_what_is_still_queued(tmp_path: Path, capsys) -> No
     assert after[0]["description"] == "texto viejo"
     assert "#shorts" in after[1]["description"] and "nueva" in after[1]["tags"]
     assert "1 entrada(s) actualizadas" in capsys.readouterr().out
+
+
+def test_reschedule_moves_pending_entries_to_the_future_and_keeps_order(
+    tmp_path: Path, capsys
+) -> None:
+    folder = _story_folder(tmp_path, 2)
+    q = str(tmp_path / "q.json")
+    main(
+        ["publish", "enqueue-all", str(folder), "--ledger", q, "--start", "2000-01-01T00:00"]
+    )  # horarios ya vencidos
+    capsys.readouterr()
+    data = json.loads(Path(q).read_text(encoding="utf-8"))
+    data[0]["status"] = "uploaded"
+    data[1]["status"], data[1]["error"] = (
+        "failed",
+        "ValueError: publish_at debe quedar en el futuro",
+    )
+    Path(q).write_text(json.dumps(data), encoding="utf-8")
+    uploaded_when = data[0]["publish_at"]
+
+    assert main(["publish", "reschedule", "--ledger", q, "--times", "12:00,18:00"]) == 0
+
+    after = json.loads(Path(q).read_text(encoding="utf-8"))
+    assert (
+        after[0]["publish_at"] == uploaded_when and after[0]["status"] == "uploaded"
+    )  # lo subido no se toca
+    pending = after[1:]
+    assert all(e["status"] == "queued" and e["error"] is None for e in pending)
+    whens = [e["publish_at"] for e in pending]
+    assert whens == sorted(whens) and whens[0] > datetime.now(UTC).isoformat()
+    assert "3 entrada(s) reprogramadas" in capsys.readouterr().out

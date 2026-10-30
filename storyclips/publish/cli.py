@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
 from storyclips.publish.ledger import Ledger
@@ -96,6 +96,30 @@ def _refresh(args: argparse.Namespace) -> None:
     print(f"{changed} entrada(s) actualizadas")
 
 
+def _reschedule(args: argparse.Namespace) -> None:
+    """Reparte de nuevo, desde ahora, la hora de lo que sigue en cola (conserva el orden)."""
+    ledger = _ledger(args)
+    pending = ledger.pending(datetime.now(UTC))
+    if not pending:
+        print("no hay nada pendiente")
+        return
+    hours = [time.fromisoformat(h) for h in args.times.split(",")]
+    after = (
+        parse_local(args.start, args.tz)
+        if args.start
+        else datetime.now(UTC) + timedelta(minutes=45)
+    )
+    pending_keys = {e.key for e in pending}
+    taken = [e.when() for e in ledger.entries() if e.key not in pending_keys]
+    for entry, slot in zip(
+        pending, next_slots(after, hours, len(pending), tz=args.tz, taken=taken), strict=True
+    ):
+        ledger.reschedule(entry, slot)
+        print(f"{slot:%Y-%m-%d %H:%M}  {Path(entry.video).name}")
+    ledger.save()
+    print(f"{len(pending)} entrada(s) reprogramadas")
+
+
 def _slots(args: argparse.Namespace) -> None:
     hours = [time.fromisoformat(h) for h in args.times.split(",")]
     taken = [e.when() for e in _ledger(args).entries()]
@@ -185,6 +209,17 @@ def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-ar
     common(rf)
     rf.add_argument("--tags", help="etiquetas extra separadas por coma")
     rf.set_defaults(func=_refresh)
+
+    rs = publish.add_parser(
+        "reschedule", help="reparte de nuevo las horas de lo pendiente, desde ahora"
+    )
+    common(rs)
+    rs.add_argument("--times", default="12:00,18:00")
+    rs.add_argument(
+        "--start", help="no antes de AAAA-MM-DDTHH:MM (hora de --tz); por defecto, dentro de 45 min"
+    )
+    rs.add_argument("--tz", default=DEFAULT_TZ)
+    rs.set_defaults(func=_reschedule)
 
     s = publish.add_parser("slots", help="próximos horarios libres a esas horas diarias")
     common(s)
