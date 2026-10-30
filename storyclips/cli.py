@@ -67,7 +67,7 @@ def _render(args: argparse.Namespace, files: list[Path]) -> None:
     made = 0
     for file in files:
         data = json.loads(file.read_text(encoding="utf-8"))
-        story = Story(data["title"], data["text"])
+        story = Story(data["title"], data["text"], tuple(data.get("tags", ())))
         try:
             parts = produce(
                 story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng,

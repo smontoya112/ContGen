@@ -89,7 +89,8 @@ def test_metadata_discloses_fiction_and_ai_voice(tmp_path: Path) -> None:
     assert (
         description.startswith("Siempre cerraba")
         and DISCLOSURE in description
-        and "#minecraft" in description
+        and "#storytime" in description
+        and "minecraft" not in description
     )
 
 
@@ -537,3 +538,50 @@ def test_max_uploads_respects_the_daily_quota(tmp_path: Path) -> None:
     assert sorted(e.status for e in ledger.entries()).count("queued") == 3
     run(ledger, NOW, youtube=lambda: yt, live=True, max_uploads=2)  # el día siguiente: otras 2
     assert len(yt.calls) == 4
+
+
+# ------------------------------------------------------------------ hashtags
+
+
+def test_story_tags_go_first_then_the_format_ones_and_are_capped() -> None:
+    sidecar = {
+        "title": "T",
+        "tags": ["quietfiring", "jefetoxico", "derechoslaborales"],
+        "hook": "g",
+    }
+    _, description, tags = build_metadata(sidecar, ["extra1", "extra2", "extra3"])
+    hashtags = description.splitlines()[-1].split()
+    assert hashtags[:3] == [
+        "#quietfiring",
+        "#shorts",
+        "#storytime",
+    ]  # los 3 que YouTube muestra sobre el título
+    assert len(hashtags) == 8 and tags[0] == "quietfiring" and "derechoslaborales" in tags
+
+
+def test_tags_are_deduplicated_and_never_misleading() -> None:
+    _, description, tags = build_metadata(
+        {"title": "T", "tags": ["Storytime", "#Shorts", "jefe tóxico"]}
+    )
+    assert len(tags) == len(set(tags)) and "jefetóxico" in tags
+    for forbidden in ("minecraft", "truestory", "historiasreales", "verdadera"):
+        assert forbidden not in description.lower() and forbidden not in tags
+    assert "ficcion" in tags and DISCLOSURE in description
+
+
+def test_refresh_updates_only_what_is_still_queued(tmp_path: Path, capsys) -> None:
+    folder = _story_folder(tmp_path, 1)
+    q = str(tmp_path / "q.json")
+    main(["publish", "enqueue-all", str(folder), "--ledger", q, "--start", "2099-03-01T00:00"])
+    capsys.readouterr()
+    data = json.loads(Path(q).read_text(encoding="utf-8"))
+    data[0]["status"], data[0]["description"] = "uploaded", "texto viejo"  # ya subido: no se toca
+    data[1]["description"] = "texto viejo"  # sigue en cola: se actualiza
+    Path(q).write_text(json.dumps(data), encoding="utf-8")
+
+    assert main(["publish", "refresh", "--ledger", q, "--tags", "nueva"]) == 0
+
+    after = json.loads(Path(q).read_text(encoding="utf-8"))
+    assert after[0]["description"] == "texto viejo"
+    assert "#shorts" in after[1]["description"] and "nueva" in after[1]["tags"]
+    assert "1 entrada(s) actualizadas" in capsys.readouterr().out

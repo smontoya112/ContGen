@@ -78,6 +78,24 @@ def _enqueue_all(args: argparse.Namespace) -> None:
     print(f"{len(videos)} video(s) encolados en YouTube")
 
 
+def _refresh(args: argparse.Namespace) -> None:
+    """Recalcula título, descripción y etiquetas de lo que sigue en cola (no toca lo ya subido)."""
+    ledger = _ledger(args)
+    changed = 0
+    for entry in ledger.entries():
+        video = Path(entry.video)
+        if not video.exists():
+            continue
+        title, description, tags = build_metadata(
+            load_sidecar(video), args.tags.split(",") if args.tags else None
+        )
+        if ledger.refresh(entry, title=title, description=description, tags=tags):
+            changed += 1
+            print(f"actualizado: {video.name}")
+    ledger.save()
+    print(f"{changed} entrada(s) actualizadas")
+
+
 def _slots(args: argparse.Namespace) -> None:
     hours = [time.fromisoformat(h) for h in args.times.split(",")]
     taken = [e.when() for e in _ledger(args).entries()]
@@ -160,6 +178,13 @@ def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-ar
     ea.add_argument("--tz", default=DEFAULT_TZ)
     ea.add_argument("--tags")
     ea.set_defaults(func=_enqueue_all)
+
+    rf = publish.add_parser(
+        "refresh", help="recalcula los textos y hashtags de lo que sigue en cola"
+    )
+    common(rf)
+    rf.add_argument("--tags", help="etiquetas extra separadas por coma")
+    rf.set_defaults(func=_refresh)
 
     s = publish.add_parser("slots", help="próximos horarios libres a esas horas diarias")
     common(s)

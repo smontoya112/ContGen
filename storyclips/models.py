@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 class Story:
     title: str
     text: str
+    tags: tuple[str, ...] = ()  # etiquetas propias de la historia (sin #)
 
 
 @dataclass(frozen=True)

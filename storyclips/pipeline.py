@@ -131,6 +131,7 @@ def produce(
         json.dumps(
             {
                 "title": story.title,
+                "tags": list(story.tags),
                 "hook": (split_sentences(story.text)[:1] or [""])[0][:200],
                 "parts": [
                     {

@@ -103,6 +103,14 @@ class Ledger:
         todo = [e for e in self._entries.values() if e.status in ("queued", "failed")]
         return sorted(todo, key=lambda e: e.when())
 
+    def refresh(self, entry: Entry, *, title: str, description: str, tags: list[str]) -> bool:
+        """Actualiza el texto de una entrada que aún no se subió; devuelve si cambió algo."""
+        if entry.status not in ("queued", "failed"):
+            return False
+        changed = (entry.title, entry.description, entry.tags) != (title, description, tags)
+        entry.title, entry.description, entry.tags = title, description, tags
+        return changed
+
     def record(
         self, entry: Entry, status: str, *, remote_id: str | None = None, error: str | None = None
     ) -> None:
