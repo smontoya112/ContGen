@@ -191,3 +191,61 @@ def test_produce_refuses_a_frozen_background_by_default(tmp_path: Path) -> None:
             _story(), tts=FakeTTS(), sources=[Source(Path("mc.mp4"), 738, ((0.0, 9.9),))],
             out_dir=tmp_path, run=lambda c, w: None, rng=random.Random(0), parts=1,
         )  # fmt: skip
+
+
+# ------------------------------------------------------------------ fondos horizontales
+
+
+def test_blur_layout_keeps_the_whole_frame_over_a_blurred_copy() -> None:
+    from storyclips.ffmpeg import render_command
+
+    cmd = render_command(
+        Path("bg.mp4"), 0, 60, Path("v.wav"), "a.ass", Path("o.mp4"), layout="blur"
+    )
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "boxblur" in graph and "overlay=(W-w)/2:(H-h)/2" in graph and "subtitles=a.ass" in graph
+    assert "crop=ih" not in graph  # no recorta el centro
+    with pytest.raises(ValueError, match="layout desconocido"):
+        render_command(Path("bg.mp4"), 0, 60, Path("v.wav"), "a.ass", Path("o.mp4"), layout="x")
+
+
+def test_parse_size() -> None:
+    from storyclips.ffmpeg import FfmpegError, parse_size, size_command
+
+    assert parse_size('{"streams": [{"width": 640, "height": 360}]}') == (640, 360)
+    assert size_command(Path("v.mp4"))[0] == "ffprobe"
+    with pytest.raises(FfmpegError):
+        parse_size("{}")
+
+
+def test_segments_know_if_their_source_is_landscape() -> None:
+    wide = Source(Path("w.mp4"), 600, size=(640, 360))
+    tall = Source(Path("t.mp4"), 600, size=(202, 360))
+    rng = random.Random(0)
+    assert pick_segment([wide], 60, rng).landscape and not pick_segment([tall], 60, rng).landscape
+    assert not pick_segment(
+        [Source(Path("u.mp4"), 600)], 60, rng
+    ).landscape  # sin tamaño: no se asume
+
+
+def test_exclude_skips_backgrounds_by_name(tmp_path: Path) -> None:
+    for name in ("arcilla.mp4", "Juego A.mp4", "juego b.mkv"):
+        (tmp_path / name).write_bytes(b"x")
+    sources = scan_sources(tmp_path, lambda p: 100.0, exclude=["ARCILLA", "juego b"])
+    assert [s.path.name for s in sources] == ["Juego A.mp4"]
+    assert scan_sources(tmp_path, lambda p: 1.0, size_of=lambda p: (640, 360))[0].size == (640, 360)
+
+
+def test_auto_layout_uses_blur_for_landscape_and_crop_for_portrait(tmp_path: Path) -> None:
+    def layouts(size: tuple[int, int]) -> list[str]:
+        commands: list[list[str]] = []
+        produce(
+            _story(), tts=FakeTTS(), sources=[Source(Path("bg.mp4"), 3600, size=size)],
+            out_dir=tmp_path / str(size[0]), run=lambda cmd, cwd: commands.append(cmd),
+            rng=random.Random(0), parts=1,
+        )  # fmt: skip
+        return [
+            "blur" if "boxblur" in c[c.index("-filter_complex") + 1] else "crop" for c in commands
+        ]
+
+    assert layouts((640, 360)) == ["blur"] and layouts((202, 360)) == ["crop"]

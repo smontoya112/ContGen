@@ -1,0 +1,25 @@
+{
+  "title": "La oferta que casi acepté con la mitad del sueldo",
+  "tags": [
+    "entrevista",
+    "negociacion",
+    "giroinesperado"
+  ],
+  "hook": "Después de seis meses sin trabajo, me llamaron de una empresa grande.",
+  "parts": [
+    {
+      "index": 1,
+      "title": "La oferta que casi acepté con la mitad del sueldo (Parte 1/2)",
+      "file": "la-oferta-que-casi-acepte-con-la-mitad-d-7f2b60_parte1.mp4",
+      "duration_s": 55.45,
+      "hook": "Después de seis meses sin trabajo, me llamaron de una empresa grande."
+    },
+    {
+      "index": 2,
+      "title": "La oferta que casi acepté con la mitad del sueldo (Parte 2/2)",
+      "file": "la-oferta-que-casi-acepte-con-la-mitad-d-7f2b60_parte2.mp4",
+      "duration_s": 53.94,
+      "hook": "Me dijo que respondiera con un correo educado, pidiendo que el cargo y el sueldo coincidieran con las funciones reales."
+    }
+  ]
+}

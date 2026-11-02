@@ -1,0 +1,25 @@
+{
+  "title": "Me llegó por error el mensaje de mi jefe",
+  "tags": [
+    "despidos",
+    "trabajo",
+    "giroinesperado"
+  ],
+  "hook": "Un jueves por la tarde, mi jefe escribió en el chat del equipo un mensaje que no era para nosotros.",
+  "parts": [
+    {
+      "index": 1,
+      "title": "Me llegó por error el mensaje de mi jefe (Parte 1/2)",
+      "file": "me-llego-por-error-el-mensaje-de-mi-jefe-3486ab_parte1.mp4",
+      "duration_s": 53.05,
+      "hook": "Un jueves por la tarde, mi jefe escribió en el chat del equipo un mensaje que no era para nosotros."
+    },
+    {
+      "index": 2,
+      "title": "Me llegó por error el mensaje de mi jefe (Parte 2/2)",
+      "file": "me-llego-por-error-el-mensaje-de-mi-jefe-3486ab_parte2.mp4",
+      "duration_s": 61.38,
+      "hook": "Actualicé mi currículum y le pedí a tres personas que me dieran una carta de recomendación."
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "title": "Mi casero se quedó con mi depósito",
+  "tags": [
+    "casero",
+    "depositodealquiler",
+    "derechosdelinquilino"
+  ],
+  "hook": "Viví tres años en un apartamento pequeño pero lindo.",
+  "parts": [
+    {
+      "index": 1,
+      "title": "Mi casero se quedó con mi depósito (Parte 1/2)",
+      "file": "mi-casero-se-quedo-con-mi-deposito-15a0a1_parte1.mp4",
+      "duration_s": 56.42,
+      "hook": "Viví tres años en un apartamento pequeño pero lindo."
+    },
+    {
+      "index": 2,
+      "title": "Mi casero se quedó con mi depósito (Parte 2/2)",
+      "file": "mi-casero-se-quedo-con-mi-deposito-15a0a1_parte2.mp4",
+      "duration_s": 55.96,
+      "hook": "Abrí las fotos una por una."
+    }
+  ]
+}

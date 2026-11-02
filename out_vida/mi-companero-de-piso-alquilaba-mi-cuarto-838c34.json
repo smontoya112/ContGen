@@ -1,0 +1,25 @@
+{
+  "title": "Mi compañero de piso alquilaba mi cuarto a escondidas",
+  "tags": [
+    "roommates",
+    "alquiler",
+    "traicion"
+  ],
+  "hook": "Me fui dos semanas de viaje por trabajo y dejé mi cuarto como siempre.",
+  "parts": [
+    {
+      "index": 1,
+      "title": "Mi compañero de piso alquilaba mi cuarto a escondidas (Parte 1/2)",
+      "file": "mi-companero-de-piso-alquilaba-mi-cuarto-838c34_parte1.mp4",
+      "duration_s": 51.61,
+      "hook": "Me fui dos semanas de viaje por trabajo y dejé mi cuarto como siempre."
+    },
+    {
+      "index": 2,
+      "title": "Mi compañero de piso alquilaba mi cuarto a escondidas (Parte 2/2)",
+      "file": "mi-companero-de-piso-alquilaba-mi-cuarto-838c34_parte2.mp4",
+      "duration_s": 59.9,
+      "hook": "«Puedo explicarlo»."
+    }
+  ]
+}

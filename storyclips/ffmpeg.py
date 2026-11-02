@@ -51,6 +51,7 @@ def render_command(
     height: int = 1920,
     fps: int = 30,
     loop: bool = False,
+    layout: str = "crop",
     ffmpeg: str = "ffmpeg",
 ) -> list[str]:
     """Fondo recortado a vertical + voz en off + subtítulos quemados.
@@ -60,10 +61,22 @@ def render_command(
     """
     if not _SAFE_NAME.match(ass_name):
         raise ValueError(f"nombre de subtítulos no permitido: {ass_name!r}")
-    video = (
-        f"[0:v]crop=ih*{width}/{height}:ih,scale={width}:{height}:flags=lanczos,setsar=1,fps={fps},"
-        f"subtitles={ass_name}[v]"
-    )
+    if layout == "blur":
+        # Fondos horizontales: el cuadro completo, centrado, sobre una copia ampliada y desenfocada.
+        video = (
+            f"[0:v]split=2[a][b];"
+            f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},boxblur=24:4[bg];"
+            f"[b]scale={width}:-2:flags=lanczos[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={fps},subtitles={ass_name}[v]"
+        )
+    elif layout == "crop":
+        video = (
+            f"[0:v]crop=ih*{width}/{height}:ih,scale={width}:{height}:flags=lanczos,setsar=1,"
+            f"fps={fps},subtitles={ass_name}[v]"
+        )
+    else:
+        raise ValueError(f"layout desconocido: {layout!r} (usa crop o blur)")
     repeat = ["-stream_loop", "-1"] if loop else []  # el fondo es un clip corto que se repite
     return [
         ffmpeg, "-y", *repeat,
@@ -197,3 +210,27 @@ def analyze_activity(
     except OSError:
         pass  # carpeta de solo lectura: se recalcula la próxima vez
     return intervals
+
+
+def size_command(path: Path, *, ffprobe: str = "ffprobe") -> list[str]:
+    return [
+        ffprobe, "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "json", os.fspath(path),
+    ]  # fmt: skip
+
+
+def parse_size(output: str) -> tuple[int, int]:
+    try:
+        stream = json.loads(output)["streams"][0]
+        return int(stream["width"]), int(stream["height"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise FfmpegError(f"salida de ffprobe inesperada: {output[:120]!r}") from exc
+
+
+def probe_size(path: Path, *, ffprobe: str = "ffprobe") -> tuple[int, int]:
+    if shutil.which(ffprobe) is None:
+        raise FfmpegError(f"no encuentro '{ffprobe}': instala FFmpeg")
+    result = subprocess.run(size_command(path, ffprobe=ffprobe), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise FfmpegError(f"ffprobe falló con {path.name}: {result.stderr[-200:]}")
+    return parse_size(result.stdout)

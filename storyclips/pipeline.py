@@ -64,6 +64,7 @@ def produce(
     parts: int = 2,
     pause_s: float = 0.25,
     allow_loop: bool = False,
+    layout: str = "auto",
 ) -> list[PartResult]:
     """Genera los videos de la historia. Cada parte menos la última termina en el corte con una
     tarjeta «Parte N en el siguiente video»; la siguiente parte empieza con su «PARTE N»."""
@@ -112,6 +113,7 @@ def produce(
                 ass.name,
                 video.resolve(),
                 loop=segment.loop,
+                layout=("blur" if segment.landscape else "crop") if layout == "auto" else layout,
             ),
             work,
         )

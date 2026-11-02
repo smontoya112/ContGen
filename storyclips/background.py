@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +21,7 @@ class Source:
     duration_s: float
     # Tramos con movimiento (inicio, fin); None = no se analizó y se usa el video entero.
     active: tuple[tuple[float, float], ...] | None = None
+    size: tuple[int, int] | None = None  # (ancho, alto)
 
     def intervals(self) -> list[tuple[float, float]]:
         return list(self.active) if self.active is not None else [(0.0, self.duration_s)]
@@ -33,21 +34,33 @@ class Segment:
     duration_s: float
     loop: bool = False  # el tramo es más corto que lo necesario: se repite en bucle
     clip_s: float | None = None  # duración del tramo que se repite
+    size: tuple[int, int] | None = None
+
+    @property
+    def landscape(self) -> bool:
+        return self.size is not None and self.size[0] > self.size[1] * 1.2
 
 
 def scan_sources(
     folder: Path,
     probe: Callable[[Path], float],
     analyze: Callable[[Path, float], list[tuple[float, float]]] | None = None,
+    size_of: Callable[[Path], tuple[int, int]] | None = None,
+    exclude: Sequence[str] = (),
 ) -> list[Source]:
     if not folder.is_dir():
         raise NoBackground(f"no existe la carpeta de fondos: {folder}")
-    found = sorted(p for p in folder.iterdir() if p.suffix.lower() in VIDEO_SUFFIXES)
+    found = sorted(
+        p
+        for p in folder.iterdir()
+        if p.suffix.lower() in VIDEO_SUFFIXES
+        and not any(word.lower() in p.name.lower() for word in exclude)
+    )
     sources = []
     for path in found:
         duration = probe(path)
         active = tuple(analyze(path, duration)) if analyze else None
-        sources.append(Source(path, duration, active))
+        sources.append(Source(path, duration, active, size_of(path) if size_of else None))
     if not sources:
         raise NoBackground(f"no hay videos ({', '.join(sorted(VIDEO_SUFFIXES))}) en {folder}")
     return sources
@@ -60,12 +73,14 @@ def pick_segment(
     candidates = [(src, a, b) for src in sources for a, b in src.intervals() if b - a >= need_s]
     if candidates:
         src, a, b = rng.choice(candidates)
-        return Segment(src.path, round(rng.uniform(a, b - need_s), 3), need_s)
+        return Segment(src.path, round(rng.uniform(a, b - need_s), 3), need_s, size=src.size)
 
     intervals = [(b - a, src, a) for src in sources for a, b in src.intervals()]
     longest, src, start = max(intervals, key=lambda i: i[0], default=(0.0, None, 0.0))
     if allow_loop and src is not None and longest >= MIN_LOOP_S:
-        return Segment(src.path, round(start, 3), need_s, loop=True, clip_s=round(longest, 3))
+        return Segment(
+            src.path, round(start, 3), need_s, loop=True, clip_s=round(longest, 3), size=src.size
+        )
     total = sum(length for length, _, _ in intervals)
     raise NoBackground(
         f"ningún fondo tiene {need_s:.0f} s seguidos con movimiento (el tramo más largo con movimiento "

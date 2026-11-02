@@ -1,0 +1,25 @@
+{
+  "title": "El vendedor me juró que el carro tenía pocos kilómetros",
+  "tags": [
+    "autousado",
+    "estafa",
+    "consejos"
+  ],
+  "hook": "Mi primer carro lo compré usado, con todos mis ahorros.",
+  "parts": [
+    {
+      "index": 1,
+      "title": "El vendedor me juró que el carro tenía pocos kilómetros (Parte 1/2)",
+      "file": "el-vendedor-me-juro-que-el-carro-tenia-p-794e08_parte1.mp4",
+      "duration_s": 54.8,
+      "hook": "Mi primer carro lo compré usado, con todos mis ahorros."
+    },
+    {
+      "index": 2,
+      "title": "El vendedor me juró que el carro tenía pocos kilómetros (Parte 2/2)",
+      "file": "el-vendedor-me-juro-que-el-carro-tenia-p-794e08_parte2.mp4",
+      "duration_s": 61.62,
+      "hook": "«Mira esto», me dijo Jorge."
+    }
+  ]
+}

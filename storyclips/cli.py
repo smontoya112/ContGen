@@ -11,7 +11,13 @@ from pathlib import Path
 import httpx
 
 from storyclips.background import NoBackground, scan_sources
-from storyclips.ffmpeg import FfmpegError, analyze_activity, probe_duration, run_ffmpeg
+from storyclips.ffmpeg import (
+    FfmpegError,
+    analyze_activity,
+    probe_duration,
+    probe_size,
+    run_ffmpeg,
+)
 from storyclips.llm import ChatClient, LlmConfig, StoryError, StoryWriter
 from storyclips.models import Story
 from storyclips.pipeline import produce, slugify
@@ -57,7 +63,13 @@ def _make_tts(args: argparse.Namespace) -> TTS:
 
 def _render(args: argparse.Namespace, files: list[Path]) -> None:
     tts = _make_tts(args)
-    sources = scan_sources(Path(args.backgrounds), probe_duration, analyze=analyze_activity)
+    sources = scan_sources(
+        Path(args.backgrounds),
+        probe_duration,
+        analyze=analyze_activity,
+        size_of=probe_size,
+        exclude=args.exclude,
+    )
     for src in sources:
         moving = sum(b - a for a, b in src.intervals())
         print(f"fondo {src.path.name}: {moving:.0f} s con movimiento de {src.duration_s:.0f} s")
@@ -71,7 +83,7 @@ def _render(args: argparse.Namespace, files: list[Path]) -> None:
         try:
             parts = produce(
                 story, tts=tts, sources=sources, out_dir=out, run=run_ffmpeg, rng=rng,
-                parts=args.parts, allow_loop=args.allow_loop,
+                parts=args.parts, allow_loop=args.allow_loop, layout=args.layout,
             )  # fmt: skip
         except (FfmpegError, ValueError) as exc:  # una historia mala no tumba el lote
             print(f"AVISO: no se montó {file.name}: {exc}", file=sys.stderr)
@@ -117,6 +129,18 @@ def _common(p: argparse.ArgumentParser, *, write: bool, render: bool) -> None:
         p.add_argument("--backgrounds", default="backgrounds", help="tus videos de fondo")
         p.add_argument("--out", default="out")
         p.add_argument("--seed", type=int, default=0)
+        p.add_argument(
+            "--layout",
+            choices=("auto", "crop", "blur"),
+            default="auto",
+            help="auto: horizontales con cuadro completo sobre fondo desenfocado; verticales recortados",
+        )
+        p.add_argument(
+            "--exclude",
+            action="append",
+            default=[],
+            help="no usar fondos cuyo nombre contenga este texto (repetible)",
+        )
         p.add_argument(
             "--parts",
             type=int,
